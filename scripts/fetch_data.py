@@ -139,8 +139,46 @@ def fetch_prices():
             if w:
                 out[pc[:5]] = {"price": round(s / w, 1), "types": types, "sales": w, "year": y}
                 break
-    save("prices.json", {"table": tbl["id"], "year": years[-1], "areas": out})
-    return f"{len(out)} areas, {years[-1]}"
+    detached = None
+    try:
+        detached = fetch_detached_average()
+    except Exception as e:  # noqa: BLE001 - optional reference figure
+        print(f"  detached-house average failed: {e}", file=sys.stderr)
+    save("prices.json", {"table": tbl["id"], "year": years[-1], "areas": out, "detached": detached})
+    return f"{len(out)} areas, {years[-1]}" + (f", detached avg {detached['price']}" if detached else "")
+
+
+def fetch_detached_average():
+    """Average price per m² of old one-dwelling (detached) houses on their own plot in Greater Helsinki,
+    last four quarters weighted by number of sales. Statistics Finland publishes no finer area for these."""
+    tables = get_json(PX + "StatFin/kihi")
+    tbl = next(t for t in tables if t.get("type") == "t" and re.search("one-dwelling houses", t["text"], re.I)
+               and re.search("square", t["text"], re.I) and re.search("quarterly", t["text"], re.I))
+    url = PX + "StatFin/kihi/" + tbl["id"]
+    m = get_json(url)
+    vq = next((v for v in m["variables"] if v.get("time")), None) or var(m, lambda v: re.search("quarter", v["text"], re.I))
+    vr = var(m, lambda v: re.search("region", v["text"], re.I))
+    vc = var(m, lambda v: re.search("contents|information", v["code"] + v["text"], re.I))
+    region = vr["values"][next(i for i, t in enumerate(vr["valueTexts"]) if t.strip().lower() == "greater helsinki")]
+    price = vc["values"][next(i for i, t in enumerate(vc["valueTexts"]) if re.match("average price per square", t, re.I))]
+    count = vc["values"][next(i for i, t in enumerate(vc["valueTexts"]) if re.match("number of transactions", t, re.I))]
+    quarters = vq["values"][-4:]
+    q = {"query": [
+        {"code": vq["code"], "selection": {"filter": "item", "values": quarters}},
+        {"code": vr["code"], "selection": {"filter": "item", "values": [region]}},
+        {"code": vc["code"], "selection": {"filter": "item", "values": [price, count]}},
+    ], "response": {"format": "json-stat2"}}
+    at = jstat_getter(get_json(url, q))
+    s = w = 0
+    for qv in quarters:
+        pr = at(**{vq["code"]: qv, vr["code"]: region, vc["code"]: price})
+        n = at(**{vq["code"]: qv, vr["code"]: region, vc["code"]: count})
+        if pr and n:
+            s += pr * n
+            w += n
+    if not w:
+        raise RuntimeError("no detached-house data")
+    return {"price": round(s / w), "sales": w, "period": f"{quarters[0]}–{quarters[-1]}", "region": "Greater Helsinki"}
 
 
 # ---------- rents (archived 13eb) ----------

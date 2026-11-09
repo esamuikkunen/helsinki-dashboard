@@ -357,7 +357,7 @@ async function loadPrices(){
   const saved=SNAP&&SNAP.sources&&SNAP.sources.prices&&await snap("prices.json");
   if(saved&&saved.areas){ let n=0; for(const [pc,v] of Object.entries(saved.areas)){ const a=byCode[pc]; if(!a) continue;
       a.price=v.price; a.priceTypes=v.types; a.priceSales=v.sales; a.priceYear=v.year; n++; }
-    meta.priceYear=saved.year; setStatus("prices","ok",saved.year+", "+n+" areas, "+snapNote("prices")); return true; }
+    meta.priceYear=saved.year; meta.detached=saved.detached||null; setStatus("prices","ok",saved.year+", "+n+" areas, "+snapNote("prices")); return true; }
   // Table 13mu has no "all dwellings" total, so prices are a sales-weighted average over flat sizes and terraced houses.
   // Latest year first; areas without enough sales that year fall back to the year before.
   setStatus("prices","wait");
@@ -580,8 +580,10 @@ function toggleSocial(){
 
 /* ---------- colour scales ---------- */
 const RAMP=["--c0","--c1","--c2","--c3","--c4","--c5","--c6"].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const TYPE_LABEL={"Blocks of flats, one-room flat":"Flats, 1 room","Blocks of flats, two-room flat":"Flats, 2 rooms","Blocks of flats, three-room flat+":"Flats, 3+ rooms","Terraced houses total":"Terraced, semi-detached and company-owned detached"};
 const METRICS={
-  price:{label:"Price of old flats, €/m²",get:a=>a.price,fmt:v=>eur(v)},
+  price:{label:"Home prices, flats and terraced, €/m²",get:a=>a.price,fmt:v=>eur(v)},
+  priceTerr:{label:"Terraced and semi-detached houses, €/m²",get:a=>a.priceTypes&&a.priceTypes["Terraced houses total"],fmt:v=>eur(v)},
   rentM2:{label:"Rent, €/m²/month",get:a=>a.rentM2,fmt:v=>"€"+fmt(v,1)},
   medHH:{label:"Median household income",get:a=>a.medHH,fmt:v=>eur(v)},
   age:{label:"Average age",get:a=>a.age,fmt:v=>fmt(v,1)},
@@ -731,7 +733,13 @@ function enrich(p){
   const code=String(p.c_kayttark||"").trim(); p._code=code;
   p._residential=code? /^0/.test(code) : p.d_ashuoala>0;
   p._housing=p._residential&&p.d_ashuoala>0?p.d_ashuoala:null;
-  const a=byCode[p.postinumero]; p._price=a&&a.price;
+  const a=byCode[p.postinumero];
+  // Small houses (use codes 01x detached/semi-detached, 02x terraced) are valued with the area's terraced-house price,
+  // or the regional detached-house average if the area has no terraced sales. Blocks of flats use the area's overall price.
+  const small=/^0[12]/.test(code), terr=a&&a.priceTypes&&a.priceTypes["Terraced houses total"];
+  if(small&&terr){ p._price=terr; p._priceBasis="area terraced/semi-detached price"; }
+  else if(small&&meta.detached){ p._price=meta.detached.price; p._priceBasis=meta.detached.region+" detached-house average"; }
+  else { p._price=a&&a.price; p._priceBasis="area flat and terraced price"; }
   p._value=p._housing&&p._price?p._housing*p._price:null;
 }
 function bPass(p){
@@ -774,10 +782,10 @@ function buildingPopup(p){
    <dt>Flats</dt><dd>${fmt(p.i_huoneistojen_lkm)}</dd>
    <dt>Housing floor area</dt><dd>${p._housing?fmt(p._housing)+" m²":"–"}</dd>
    <dt>Lift</dt><dd>${p.c_hissi==="x"?"Yes":"No"}</dd>
-   <dt>Area price</dt><dd>${p._price?eur(p._price)+"/m²":"–"}</dd>
+   <dt>Price used</dt><dd>${p._price?eur(p._price)+"/m²":"–"}</dd>
    <dt>Est. value, whole building</dt><dd>${p._value?eur(p._value):"–"}</dd>
    ${p._value&&p.i_huoneistojen_lkm>1?`<dt>Average per flat</dt><dd>${eur(p._value/p.i_huoneistojen_lkm)}</dd>`:""}
-  </dl><p class="note">${p._residential?"Indicative only: area price per m² × housing floor area.":"No home value: not a residential building."}</p>`;
+  </dl><p class="note">${p._residential?"Indicative only: housing floor area × "+(p._priceBasis||"area price")+".":"No home value: not a residential building."}</p>`;
 }
 
 /* ---------- figures panel ---------- */
@@ -792,7 +800,7 @@ function renderFigures(){
   el.innerHTML=`<div class="fig"><h4>Matching areas</h4>
     <div class="big"><div><b>${pass.length}</b><span>of ${areas.length} postal areas</span></div><div><b>${fmt(pop)}</b><span>residents</span></div>
     <div><b>${prices.length?eur(prices[0]):"–"}</b><span>lowest €/m²</span></div><div><b>${prices.length?eur(prices[Math.floor(prices.length/2)]):"–"}</b><span>median €/m²</span></div></div>
-    <p class="note">Prices: old flats in housing companies${meta.priceYear?", "+meta.priceYear:""}. Click an area for its figures.</p></div>
+    <p class="note">Prices: old flats and terraced houses${meta.priceYear?", "+meta.priceYear:""}; detached houses on own plot are not published by area. Click an area for its figures.</p></div>
     <div class="fig"><h4>Ranked by ${m.label.toLowerCase()}</h4><ol class="list">${sorted.map(a=>`<li data-code="${a.code}"><span>${a.code} ${a.name}</span><span>${m.fmt(m.get(a))}</span></li>`).join("")}</ol></div>`;
   el.querySelectorAll("li[data-code]").forEach(li=>li.addEventListener("click",()=>{const a=byCode[li.dataset.code];selectArea(a);map.fitBounds(a.layer.getBounds(),{maxZoom:14});}));
 }
@@ -810,9 +818,9 @@ function renderArea(a){
   const own=a.own||0, rent=a.rent||0, other=Math.max(0,100-own-rent);
   el.innerHTML=`<div class="fig"><button id="back" class="seg" style="justify-self:start;padding:4px 10px;background:var(--panel);cursor:pointer">← All areas</button>
     <h3>${a.code} ${a.name}</h3><p class="note">${a.p.namn&&a.p.namn!==a.name?a.p.namn+" · ":""}${fmt(a.pop)} residents · ${fmt(a.density)} per km²</p>
-    <div class="big"><div><b>${a.price?eur(a.price):"–"}</b><span>per m², old flats</span></div><div><b>${a.price?eur(a.price*size):"–"}</b><span>${size} m² flat</span></div>
+    <div class="big"><div><b>${a.price?eur(a.price):"–"}</b><span>per m², flats and terraced</span></div><div><b>${a.price?eur(a.price*size):"–"}</b><span>${size} m² home</span></div>
     <div><b>${a.rentM2?"€"+fmt(a.rentM2,1):"–"}</b><span>rent per m²/month</span></div><div><b>${a.rentM2?eur(a.rentM2*size):"–"}</b><span>${size} m² rent/month</span></div></div>
-    ${a.priceTypes?`<dl class="kv">${Object.entries(a.priceTypes).map(([k,v])=>`<dt>Price, ${k.toLowerCase()}</dt><dd>${eur(v)}/m²</dd>`).join("")}</dl><p class="note">Old dwellings in housing companies, ${a.priceYear}, average of ${fmt(a.priceSales)} sales${a.priceYear!==meta.priceYear?" (too few sales in "+meta.priceYear+")":""}.</p>`:""}
+    ${a.priceTypes?`<dl class="kv">${Object.entries(a.priceTypes).map(([k,v])=>`<dt>${TYPE_LABEL[k]||k}</dt><dd>${eur(v)}/m²</dd>`).join("")}${meta.detached?`<dt>Detached houses on own plot (${meta.detached.region} average)</dt><dd>${eur(meta.detached.price)}/m²</dd>`:""}</dl><p class="note">Old homes sold in ${a.priceYear}, average of ${fmt(a.priceSales)} sales${a.priceYear!==meta.priceYear?" (too few sales in "+meta.priceYear+")":""}. Detached houses on their own plot are only published for ${meta.detached?meta.detached.region+" ("+meta.detached.period+", "+fmt(meta.detached.sales)+" sales)":"large regions"}, not by area.</p>`:""}
     ${a.rentRooms?`<dl class="kv">${Object.entries(a.rentRooms).map(([k,v])=>`<dt>Rent, ${k.toLowerCase()}</dt><dd>€${fmt(v,2)}/m²</dd>`).join("")}</dl><p class="note">Non-subsidised rental flats, ${meta.rentYear||"latest 4 quarters"}, based on ${fmt(a.rentN)} rental agreements.</p>`:""}
     ${a.pass===false?`<p class="note" style="color:var(--warn)">Outside your current filters.</p>`:""}</div>
    <div class="fig"><h4>Income</h4><dl class="kv"><dt>Median household income</dt><dd>${eur(a.medHH)}</dd><dt>Mean household income</dt><dd>${eur(a.meanHH)}</dd>
