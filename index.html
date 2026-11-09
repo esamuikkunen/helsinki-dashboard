@@ -12,7 +12,7 @@
 :root{
   --bg:#f3f5f6; --panel:#ffffff; --ink:#15212b; --muted:#5b6872; --line:#dde3e7;
   --accent:#1f8a5b; --accent-ink:#ffffff; --warn:#b5502a; --sea:#0f4c75;
-  --nx:#8a3ffc; --nx-fill:rgba(138,63,252,.18);
+  --shelter:#d4561b; --treat:#0e7c86; --nx:#8a3ffc; --nx-fill:rgba(138,63,252,.18);
   --c0:#eef4f1; --c1:#cfe3dc; --c2:#a6cdd0; --c3:#78b0c4; --c4:#4b8fb4; --c5:#2a6b9a; --c6:#123f6b;
   --f-display:"Archivo",system-ui,sans-serif; --f-body:"Archivo",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
 }
@@ -81,6 +81,9 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
 .poi{border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 #tabs{display:none}
 .basemap{filter:saturate(.45) brightness(1.04) contrast(.95)}
+.shm,.trm{background:none;border:0}
+.shm b{display:block;width:15px;height:15px;transform:translate(-50%,-50%);background:var(--shelter);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);border-radius:2px}
+.trm b{display:grid;place-items:center;width:20px;height:20px;transform:translate(-50%,-50%);background:var(--treat);color:#fff;font:700 11px var(--f-mono);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);border-radius:50%}
 .nxm{background:none;border:0}
 .nxm b{display:block;width:16px;height:16px;transform:translate(-50%,-50%) rotate(45deg);background:var(--nx);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);border-radius:3px}
 .lk{background:none;border:0}
@@ -203,8 +206,16 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
     <div class="legend-s"><span><i style="background:var(--nx)"></i>Point</span><span><i style="background:var(--nx-fill);outline:1.5px dashed var(--nx);outline-offset:-1.5px"></i>5-minute walk</span></div>
     <p class="hint">Click a point to zoom to it and see its address, opening hours and the area within a 5-minute walk along streets and paths. The mobile Liikkuva Symppis and Katuklinikka outreach team have no fixed address and are not shown.</p>
   </section>
+
+  <section class="grp" data-g="social">
+    <h2>Shelters and substance treatment</h2>
+    <label class="row"><input type="checkbox" id="showShelters"> Show homeless shelters</label>
+    <label class="row"><input type="checkbox" id="showTreatment"> Show alcohol and drug treatment units</label>
+    <div class="legend-s"><span><i style="background:var(--shelter)"></i>Shelter</span><span><i style="background:var(--treat);border-radius:50%"></i>Treatment</span></div>
+    <p class="hint">Click a marker for the address, who it serves and opening hours. Treatment units at the same address are grouped into one marker.</p>
+  </section>
   <section class="grp">
-    <p class="note">Data: Statistics Finland (Paavo 2026, dwelling prices and rents, CC BY 4.0), City of Helsinki building register and noise survey (CC BY 4.0), © OpenStreetMap contributors (ODbL). School figures: väestökello.fi (Vipunen/KOSKI, 2025/26) and s2koulut.xyz. Needle exchange points: paihdelinkki.fi, Helsinki service map, OpenStreetMap routing. High school results and cutoffs: kouluhaku.fi (YTL, spring 2026) and yhteishaku.app (joint application 2026). Building values are a rough estimate: area price per m² × housing floor area. They are not a valuation.</p>
+    <p class="note">Data: Statistics Finland (Paavo 2026, dwelling prices and rents, CC BY 4.0), City of Helsinki building register and noise survey (CC BY 4.0), © OpenStreetMap contributors (ODbL). School figures: väestökello.fi (Vipunen/KOSKI, 2025/26) and s2koulut.xyz. Shelters: hel.fi, Finnish Red Cross, VVA ry. Treatment units: Helsinki service map. Needle exchange points: paihdelinkki.fi, Helsinki service map, OpenStreetMap routing. High school results and cutoffs: kouluhaku.fi (YTL, spring 2026) and yhteishaku.app (joint application 2026). Building values are a rough estimate: area price per m² × housing floor area. They are not a valuation.</p>
   </section>
 </aside>
 
@@ -552,6 +563,20 @@ function toggleNx(){
   if($("showNxWalk").checked) nxAllWalks.addTo(map); else map.removeLayer(nxAllWalks);
 }
 
+
+/* ---------- homeless shelters (hel.fi, Red Cross, VVA) and substance treatment units (Helsinki service map), checked 9 Nov 2026 ---------- */
+const SOC={"shelters":[{"name":"Hietaniemenkatu Service Centre (Hietsu) emergency housing","addr":"Hietaniemenkatu 5 B, 00100 Helsinki","lat":60.1702,"lng":24.9243,"kind":"Emergency shelter","who":"Single adults and childless couples living in Helsinki","hours":"Walk-in 17:00–03:00; leave by 09:00","op":"City of Helsinki"},{"name":"Lauttasaari emergency housing","addr":"Lahnalahdentie 7, 00200 Helsinki","lat":60.16395,"lng":24.86719,"kind":"Emergency shelter","who":"Unhoused adults living in Helsinki, referred via Hietsu","hours":"17:00–09:00","op":"City of Helsinki"},{"name":"Kornetintie emergency housing","addr":"Kornetintie 10, Helsinki","lat":60.21656,"lng":24.87338,"kind":"Emergency shelter","who":"Undocumented adults and EU citizens without residence","hours":"17:00–09:00","op":"City of Helsinki"},{"name":"Helsinki Youth Shelter (Red Cross)","addr":"Uudenmaankatu 32 A, 00120 Helsinki","lat":60.16314,"lng":24.93817,"kind":"Youth shelter","who":"Young people aged 12–29 and young families","hours":"Overnight stays daily 17:00–10:00","op":"Finnish Red Cross"},{"name":"Night Centre Kalkkers","addr":"Ratamestarinkatu 6, 00520 Helsinki","lat":60.19892,"lng":24.93958,"kind":"Night centre (winter only)","who":"Low-threshold place to rest overnight, 15 places; not a shelter","hours":"Winter season, daily 22:00–06:00","op":"Vailla vakinaista asuntoa ry"}],"treatment":[{"lat":60.19248,"lng":24.92724,"addr":"Nordenskiöldinkatu 20, 00250 Helsinki","units":[{"name":"Päihdekuntoutus Luoto","type":"Detox and rehabilitation","id":1167},{"name":"Ryhmämuotoinen päihdeavokuntoutus","type":"Detox and rehabilitation","id":11183},{"name":"Päiväkeskus Aalto","type":"Outpatient clinic","id":61709}],"types":["Detox and rehabilitation","Outpatient clinic"]},{"lat":60.19206,"lng":24.91669,"addr":"Lääkärinkatu 8, 00250 Helsinki","units":[{"name":"Korvaushoidon arviointipoliklinikka","type":"Outpatient clinic","id":8840},{"name":"Laakson korvaushoito","type":"Opioid substitution treatment","id":58183},{"name":"Laakson päihdepoliklinikka","type":"Outpatient clinic","id":58314},{"name":"Päihdevieroitus ja -kuntoutusyksikkö","type":"Detox and rehabilitation","id":79150}],"types":["Detox and rehabilitation","Opioid substitution treatment","Outpatient clinic"]},{"lat":60.20224,"lng":24.92568,"addr":"Pasilankatu 18, 00240 Helsinki","units":[{"name":"Selviämishoitoasema","type":"Sobering-up station","id":25682}],"types":["Sobering-up station"]},{"lat":60.18908,"lng":24.95916,"addr":"Harjukatu 7, 00500 Helsinki","units":[{"name":"Päihdepalvelujen jälkikuntoutus","type":"Outpatient clinic","id":47464},{"name":"Kumppanuustalo Harjula","type":"Outpatient clinic","id":74076}],"types":["Outpatient clinic"]},{"lat":60.19449,"lng":25.03665,"addr":"Laivalahdenkatu 2b C, 00880 Helsinki","units":[{"name":"Nuorten päihdepalvelu Pysäkki","type":"Outpatient clinic","id":47525},{"name":"Perheiden päihdeavokuntoutus","type":"Detox and rehabilitation","id":51759},{"name":"Päihdepalvelujen Jelppi","type":"Outpatient clinic","id":59841}],"types":["Detox and rehabilitation","Outpatient clinic"]},{"lat":60.19521,"lng":24.92652,"addr":"Palkkatilankatu 4 G, 00250 Helsinki","units":[{"name":"HIV-positiivisten palvelukeskus","type":"Outpatient clinic","id":56288}],"types":["Outpatient clinic"]},{"lat":60.25286,"lng":25.01702,"addr":"Soidinkuja 6 A, 00700 Helsinki","units":[{"name":"Malmin päihdepoliklinikka","type":"Outpatient clinic","id":58214},{"name":"Malmin korvaushoito","type":"Opioid substitution treatment","id":58228}],"types":["Opioid substitution treatment","Outpatient clinic"]},{"lat":60.18783,"lng":24.98052,"addr":"Työpajankatu 14 A, 00580 Helsinki","units":[{"name":"Kalasataman päihdepoliklinikka","type":"Outpatient clinic","id":58305},{"name":"Kalasataman korvaushoito","type":"Opioid substitution treatment","id":58393},{"name":"Päihdepalvelujen vastaanotto ilman ajanvarausta","type":"Outpatient clinic","id":73857}],"types":["Opioid substitution treatment","Outpatient clinic"]},{"lat":60.20607,"lng":25.14649,"addr":"Kahvikuja 3 A, 00980 Helsinki","units":[{"name":"Vuosaaren päihdepoliklinikka","type":"Outpatient clinic","id":58341},{"name":"Vuosaaren korvaushoito","type":"Opioid substitution treatment","id":58413}],"types":["Opioid substitution treatment","Outpatient clinic"]}]};
+const shelterLayer=L.layerGroup(SOC.shelters.map(p=>L.marker([p.lat,p.lng],{icon:L.divIcon({className:"shm",html:"<b></b>",iconSize:null}),title:p.name,riseOnHover:true})
+  .bindTooltip(p.name).bindPopup(`<h5>${p.name}</h5><dl class="kv"><dt>Type</dt><dd>${p.kind}</dd><dt>Address</dt><dd style="text-align:right">${p.addr}</dd>
+    <dt>For</dt><dd style="text-align:right">${p.who}</dd><dt>Hours</dt><dd style="text-align:right">${p.hours}</dd><dt>Run by</dt><dd>${p.op}</dd></dl>`,{maxWidth:320})));
+const treatLayer=L.layerGroup(SOC.treatment.map(p=>L.marker([p.lat,p.lng],{icon:L.divIcon({className:"trm",html:`<b>${p.units.length>1?p.units.length:"+"}</b>`,iconSize:null}),title:p.addr,riseOnHover:true})
+  .bindTooltip(`${p.addr}: ${p.types.join(", ")}`).bindPopup(`<h5>${p.addr}</h5><dl class="kv">${p.units.map(u=>`<dt>${u.name}</dt><dd style="text-align:right">${u.type}</dd>`).join("")}</dl>
+    <p class="note">City of Helsinki substance-abuse services. Source: Helsinki service map.</p>`,{maxWidth:340})));
+function toggleSocial(){
+  if($("showShelters").checked) shelterLayer.addTo(map); else map.removeLayer(shelterLayer);
+  if($("showTreatment").checked) treatLayer.addTo(map); else map.removeLayer(treatLayer);
+}
+
 /* ---------- colour scales ---------- */
 const RAMP=["--c0","--c1","--c2","--c3","--c4","--c5","--c6"].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
 const METRICS={
@@ -673,7 +698,7 @@ const poiLayers={};
 function dotLayer(list,color,label,r=5){return L.layerGroup(list.map(p=>L.circleMarker([p.lat,p.lng],{radius:r,color:"#fff",weight:1.5,fillColor:color,fillOpacity:.95}).bindTooltip(`${label}: ${p.name}`)));}
 function dimLukiot(){ if(!poiLayers.lukiot) return; const ok=new Set(eligibleLukiot()); poiLayers.lukiot.eachLayer(m=>{const l=LUKIOT.find(x=>x.lat===m.getLatLng().lat&&x.lng===m.getLatLng().lng); m.setOpacity(l&&ok.has(l)?1:.3);}); }
 function toggleLayers(){
-  toggleNx();
+  toggleNx(); toggleSocial();
   const want={rail:$("showRail").checked,schools:$("showSchools").checked,lukiot:$("showLukiot").checked,family:$("showFamily").checked,health:$("showHealth").checked};
   if(!poiLayers.rail&&window.osmReady){
     poiLayers.rail=L.layerGroup([dotLayer(pois.rail,"#e2531d","Station",7),dotLayer(pois.tram,"#1f8a5b","Tram stop",3.5)]);
