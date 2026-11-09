@@ -725,7 +725,11 @@ const B_METRICS={
 };
 function enrich(p){
   p._year=p.c_valmpvm?+String(p.c_valmpvm).slice(0,4):null;
-  p._housing=p.d_ashuoala>0?p.d_ashuoala:null;
+  // Use code (c_kayttark) starting with 0 = residential building. Hotels, offices, schools etc. can carry a small
+  // housing-area figure (a caretaker flat, hotel rooms) and must not get a home value.
+  const code=String(p.c_kayttark||"").trim(); p._code=code;
+  p._residential=code? /^0/.test(code) : p.d_ashuoala>0;
+  p._housing=p._residential&&p.d_ashuoala>0?p.d_ashuoala:null;
   const a=byCode[p.postinumero]; p._price=a&&a.price;
   p._value=p._housing&&p._price?p._housing*p._price:null;
 }
@@ -763,7 +767,7 @@ function buildingPopup(p){
   return `<h5>${addr||"Building"}</h5>
   <dl class="kv">
    <dt>Postal area</dt><dd>${p.postinumero||"–"} ${byCode[p.postinumero]?.name||""}</dd>
-   <dt>Type</dt><dd>${USE[(p.c_kayttark||"").slice(0,3)]||p.c_kayttark||p.tyyppi||"–"}</dd>
+   <dt>Type</dt><dd>${USE[(p.c_kayttark||"").slice(0,3)]||(p._code&&!p._residential?"Non-residential (use code "+p._code+")":p._code||p.tyyppi||"–")}</dd>
    <dt>Completed</dt><dd>${p._year||"–"}</dd>
    <dt>Floors</dt><dd>${fmt(p.i_kerrlkm)}</dd>
    <dt>Flats</dt><dd>${fmt(p.i_huoneistojen_lkm)}</dd>
@@ -772,7 +776,7 @@ function buildingPopup(p){
    <dt>Area price</dt><dd>${p._price?eur(p._price)+"/m²":"–"}</dd>
    <dt>Est. value, whole building</dt><dd>${p._value?eur(p._value):"–"}</dd>
    ${p._value&&p.i_huoneistojen_lkm>1?`<dt>Average per flat</dt><dd>${eur(p._value/p.i_huoneistojen_lkm)}</dd>`:""}
-  </dl><p class="note">Indicative only: area price per m² × housing floor area.</p>`;
+  </dl><p class="note">${p._residential?"Indicative only: area price per m² × housing floor area.":"No home value: not a residential building."}</p>`;
 }
 
 /* ---------- figures panel ---------- */
