@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Helsinki Home Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: three panes — filters | map | figures. Baltic slate neutrals, tram-green accent, sea-blue choropleth. */
+:root{
+  --bg:#f3f5f6; --panel:#ffffff; --ink:#15212b; --muted:#5b6872; --line:#dde3e7;
+  --accent:#1f8a5b; --accent-ink:#ffffff; --warn:#b5502a; --sea:#0f4c75;
+  --c0:#eef4f1; --c1:#cfe3dc; --c2:#a6cdd0; --c3:#78b0c4; --c4:#4b8fb4; --c5:#2a6b9a; --c6:#123f6b;
+  --f-display:"Archivo",system-ui,sans-serif; --f-body:"Archivo",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);display:flex;flex-direction:column}
+header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left,0px)) 10px max(16px,env(safe-area-inset-right,0px));background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font:800 20px/1.1 var(--f-display);font-stretch:85%;margin:0;letter-spacing:.2px}
+header h1 span{color:var(--accent)}
+header .sub{color:var(--muted);font-size:13px}
+header .spacer{flex:1}
+#status{font:12px var(--f-mono);color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+#status b{font-weight:500}
+.ok{color:var(--accent)} .err{color:var(--warn)} .wait{color:var(--muted)}
+main{flex:1;display:grid;grid-template-columns:300px 1fr 340px;min-height:0}
+aside{background:var(--panel);overflow:auto;min-width:0}
+#filters{border-right:1px solid var(--line)}
+#figures{border-left:1px solid var(--line)}
+#map{min-height:0;background:#cfdde6}
+section.grp{border-bottom:1px solid var(--line);padding:12px 16px;display:grid;gap:8px}
+section.grp h2{display:flex;justify-content:space-between;align-items:center;margin:0;font:700 12px/1 var(--f-display);text-transform:uppercase;letter-spacing:.9px;color:var(--muted)}
+section.grp h2 button{font:500 11px var(--f-body);text-transform:none;letter-spacing:0;background:none;border:0;color:var(--accent);cursor:pointer;padding:2px 4px}
+label{display:grid;gap:3px;font-size:13px}
+label.row{grid-template-columns:auto 1fr;align-items:center;gap:8px}
+input[type=number],select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font:inherit;background:var(--panel);color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.val{font:500 12px var(--f-mono);color:var(--ink)}
+.seg{display:flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--panel);padding:7px;font:600 13px var(--f-body);color:var(--muted);cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.hint{font-size:12px;color:var(--muted)}
+.afford{font:500 13px var(--f-mono);background:var(--bg);padding:8px;border-radius:4px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* figures */
+.fig{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.fig h3{margin:0;font:800 18px/1.15 var(--f-display);font-stretch:85%;text-wrap:balance}
+.fig h4{margin:0;font:700 12px var(--f-display);text-transform:uppercase;letter-spacing:.9px;color:var(--muted)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:13px}
+.kv dd{margin:0;font:500 13px var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.kv dt{color:var(--muted)}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big div{display:grid;gap:2px}
+.big b{font:600 20px var(--f-mono);font-variant-numeric:tabular-nums}
+.big span{font-size:12px;color:var(--muted)}
+.bars{display:grid;gap:4px}
+.bar{display:grid;grid-template-columns:62px 1fr 44px;gap:6px;align-items:center;font-size:12px}
+.bar i{display:block;height:9px;background:var(--c4);border-radius:2px}
+.bar em{font:500 11px var(--f-mono);font-style:normal;text-align:right;color:var(--muted)}
+.stack{display:flex;height:12px;border-radius:3px;overflow:hidden}
+.legend-s{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend-s i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+ol.list{margin:0;padding:0;list-style:none;display:grid;gap:2px}
+ol.list li{display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 6px;border-radius:4px;cursor:pointer;font-size:13px}
+ol.list li:hover{background:var(--bg)}
+ol.list li span:last-child{font:500 12px var(--f-mono)}
+.note{font-size:12px;color:var(--muted)}
+/* map legend */
+.legend{background:var(--panel);padding:8px 10px;border-radius:5px;box-shadow:0 1px 4px rgba(0,0,0,.2);font:12px var(--f-body);color:var(--ink);min-width:170px}
+.legend b{display:block;margin-bottom:5px;font-weight:700}
+.legend .ramp{display:grid;grid-template-columns:repeat(7,1fr);height:10px;border-radius:2px;overflow:hidden}
+.legend .ticks{display:flex;justify-content:space-between;font:11px var(--f-mono);color:var(--muted);margin-top:3px}
+.leaflet-popup-content{font:13px/1.4 var(--f-body)}
+.leaflet-popup-content h5{margin:0 0 4px;font:700 14px var(--f-display)}
+.poi{border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+#tabs{display:none}
+.lk{background:none;border:0}
+.lk b{display:inline-block;transform:translate(-50%,-50%);min-width:26px;padding:2px 4px;border-radius:3px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);color:#fff;font:600 11px var(--f-mono);text-align:center}
+.aname{background:none;border:0;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;line-height:1.1;pointer-events:none}
+.aname span{font:700 11px var(--f-display);font-stretch:85%;color:#15212b;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff;letter-spacing:.2px}
+.aname small{display:block;font:500 9px var(--f-mono);color:#3d4a54;text-shadow:0 0 3px #fff,0 0 2px #fff}
+@media (max-width:900px){
+  main{grid-template-columns:1fr;grid-template-rows:55vh auto}
+  #filters,#figures{display:none;border:0}
+  main[data-tab=filters] #filters, main[data-tab=figures] #figures{display:block}
+  main[data-tab=filters] #map, main[data-tab=figures] #map{display:none}
+  main{grid-template-rows:1fr}
+  #tabs{display:flex}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Helsinki <span>Home</span> Dashboard</h1>
+  <span class="sub">Postal-code areas, buildings, prices, schools and transit</span>
+  <span class="spacer"></span>
+  <div id="status"></div>
+</header>
+<div id="tabs" class="seg" style="margin:6px 16px">
+  <button data-tab="map" aria-pressed="true">Map</button><button data-tab="filters" aria-pressed="false">Filters</button><button data-tab="figures" aria-pressed="false">Figures</button>
+</div>
+<main id="main" data-tab="map">
+<aside id="filters">
+  <section class="grp">
+    <h2>The map shows</h2>
+    <div class="seg" id="modeSeg"><button data-mode="areas" aria-pressed="true">Areas</button><button data-mode="homes" aria-pressed="false">Buildings</button></div>
+    <label>Colour areas by
+      <select id="colorBy"></select></label>
+    <label>Colour buildings by
+      <select id="bColorBy">
+        <option value="value">Estimated value (indicative)</option>
+        <option value="year">Year completed</option>
+        <option value="floors">Number of floors</option>
+        <option value="flats">Number of flats</option>
+      </select></label>
+    <label>Area colour strength <span class="val" id="fillOpV"></span><input type="range" id="fillOp" min="0" max="0.9" step="0.05" value="0.4"></label>
+    <label class="row"><input type="checkbox" id="showNames" checked> Show neighbourhood names</label>
+    <p class="hint">Buildings load when you zoom in to street level (zoom 15+).</p>
+  </section>
+
+  <section class="grp" data-g="homes">
+    <h2>Buildings <button data-reset="homes">Reset</button></h2>
+    <label>Completed after <span class="val" id="yearMinV"></span><input type="range" id="yearMin" min="1800" max="2026" step="5" value="1800"></label>
+    <label>At least this many flats <input type="number" id="flatsMin" min="0" value="0"></label>
+    <label class="row"><input type="checkbox" id="liftOnly"> Has a lift</label>
+    <label class="row"><input type="checkbox" id="residentialOnly" checked> Residential buildings only</label>
+  </section>
+
+  <section class="grp" data-g="mortgage">
+    <h2>Mortgage <button data-reset="mortgage">Reset</button></h2>
+    <p class="hint">What you can pay a month: loan payment plus the housing company's maintenance charge (vastike).</p>
+    <label>Monthly budget, € <input type="number" id="budget" min="0" step="50" value=""></label>
+    <div class="two">
+      <label>Down payment, € <input type="number" id="down" min="0" step="1000" value="40000"></label>
+      <label>Interest, % <input type="number" id="rate" min="0" step="0.1" value="3.2"></label>
+    </div>
+    <div class="two">
+      <label>Loan years <input type="number" id="years" min="5" max="35" value="25"></label>
+      <label>Home size, m² <input type="number" id="size" min="15" step="5" value="60"></label>
+    </div>
+    <label>Maintenance charge, €/m²/month <input type="number" id="vastike" min="0" step="0.1" value="4.5"></label>
+    <div class="afford" id="affordOut">Enter a monthly budget to filter areas.</div>
+  </section>
+
+  <section class="grp" data-g="areas">
+    <h2>Neighbourhoods <button data-reset="areas">Reset</button></h2>
+    <label>Median household income at least <span class="val" id="incMinV"></span><input type="range" id="incMin" min="0" max="80000" step="2500" value="0"></label>
+    <label>Households with children at least <span class="val" id="kidsMinV"></span><input type="range" id="kidsMin" min="0" max="50" step="1" value="0"></label>
+    <label>Owner-occupied dwellings at least <span class="val" id="ownMinV"></span><input type="range" id="ownMin" min="0" max="90" step="1" value="0"></label>
+  </section>
+
+  <section class="grp" data-g="transit">
+    <h2>Transit <button data-reset="transit">Reset</button></h2>
+    <label>Metro or train station within <span class="val" id="railKmV"></span><input type="range" id="railKm" min="0" max="5" step="0.25" value="0"></label>
+    <label>Tram stop within <span class="val" id="tramKmV"></span><input type="range" id="tramKm" min="0" max="3" step="0.25" value="0"></label>
+    <label class="row"><input type="checkbox" id="showRail"> Show stations and tram stops</label>
+  </section>
+
+  <section class="grp" data-g="schools">
+    <h2>Schools <button data-reset="schools">Reset</button></h2>
+    <label>Primary school (grades 1–6) within <span class="val" id="sch1KmV"></span><input type="range" id="sch1Km" min="0" max="3" step="0.25" value="0"></label>
+    <label>Lower secondary (grades 7–9) within <span class="val" id="sch2KmV"></span><input type="range" id="sch2Km" min="0" max="4" step="0.25" value="0"></label>
+    <label>Upper secondary (lukio) within <span class="val" id="sch3KmV"></span><input type="range" id="sch3Km" min="0" max="6" step="0.25" value="0"></label>
+    <label>Your child's grade average (GPA) <input type="number" id="gpa" min="4" max="10" step="0.05" placeholder="e.g. 8.4"></label>
+    <p class="hint">With a GPA, only lukiot whose 2026 general-line cutoff is at or below it count as reachable.</p>
+    <label class="row"><input type="checkbox" id="showLukiot"> Show lukiot on the map</label>
+    <label class="row"><input type="checkbox" id="showSchools"> Show schools on the map</label>
+    <div class="legend-s"><span><i style="background:#2a7d4f"></i>&lt;10%</span><span><i style="background:#8db04a"></i>10–25</span><span><i style="background:#e0a526"></i>25–40</span><span><i style="background:#d9662b"></i>40–55</span><span><i style="background:#b3261e"></i>55%+</span></div>
+    <p class="hint">Dot colour: foreign-language pupils. Click a school for both sources' figures.</p>
+  </section>
+
+  <section class="grp" data-g="family">
+    <h2>Families and parks <button data-reset="family">Reset</button></h2>
+    <label>Daycare within <span class="val" id="dayKmV"></span><input type="range" id="dayKm" min="0" max="2" step="0.1" value="0"></label>
+    <label class="row"><input type="checkbox" id="showFamily"> Show daycares, playgrounds and parks</label>
+  </section>
+
+  <section class="grp" data-g="env">
+    <h2>Noise</h2>
+    <label class="row"><input type="checkbox" id="showNoise"> Show traffic noise, daytime (2022 survey)</label>
+  </section>
+
+  <section class="grp" data-g="health">
+    <h2>Health care</h2>
+    <label class="row"><input type="checkbox" id="showHealth"> Show hospitals, health stations and care homes</label>
+  </section>
+  <section class="grp">
+    <p class="note">Data: Statistics Finland (Paavo 2026, dwelling prices and rents, CC BY 4.0), City of Helsinki building register and noise survey (CC BY 4.0), © OpenStreetMap contributors (ODbL). School figures: väestökello.fi (Vipunen/KOSKI, 2025/26) and s2koulut.xyz. Lukio results and cutoffs: kouluhaku.fi (YTL, spring 2026) and yhteishaku.app (joint application 2026). Building values are a rough estimate: area price per m² × housing floor area. They are not a valuation.</p>
+  </section>
+</aside>
+
+<div id="map"></div>
+
+<aside id="figures"><div id="figBody"></div></aside>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>if(!window.L) document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\/script>');</script>
+<script>
+"use strict";
+/* ---------- on-map problem report ---------- */
+const DIAG=[];
+function diag(msg){ DIAG.push(msg); console.warn(msg); let box=document.getElementById("diag");
+  if(!box){ box=document.createElement("div"); box.id="diag";
+    box.style.cssText="position:absolute;top:10px;left:56px;right:10px;z-index:1000;max-width:520px;background:#fff7f3;color:#5a2412;border:1px solid #e3b4a0;border-radius:6px;padding:10px 12px;font:13px/1.4 Archivo,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15)";
+    (document.getElementById("map")||document.body).appendChild(box); }
+  box.innerHTML="<b>Some map data didn't load</b><ul style='margin:6px 0 0 18px;padding:0'>"+DIAG.map(m=>"<li>"+m+"</li>").join("")+"</ul>"+
+   "<p style='margin:6px 0 0'>If you are viewing this inside Claude's file preview, download the file and open it directly in your browser — the preview blocks outside data.</p>";
+}
+window.addEventListener("error",e=>diag("Script error: "+e.message));
+if(!window.L){ document.addEventListener("DOMContentLoaded",()=>diag("The map library (Leaflet) could not be downloaded. Check your internet connection or ad/script blocker.")); }
+</script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const fmt = (n, d=0) => n==null||isNaN(n) ? "–" : Number(n).toLocaleString("en-FI",{maximumFractionDigits:d,minimumFractionDigits:d});
+const eur = n => n==null||isNaN(n) ? "–" : "€" + fmt(Math.round(n));
+const pct = n => n==null||isNaN(n) ? "–" : fmt(n,0) + "%";
+const HEL_BBOX = [60.09, 24.78, 60.30, 25.27]; // S,W,N,E
+
+/* ---------- status ---------- */
+const sources = {paavo:"Census areas", prices:"Dwelling prices", rents:"Rents", osm:"Schools & transit", bld:"Buildings"};
+const state = {};
+function setStatus(k, s, msg){ state[k]={s,msg}; $("status").innerHTML = Object.entries(state).map(([k,v]) =>
+  `<span title="${v.msg||""}"><b>${sources[k]}</b> <span class="${v.s}">${v.s==="ok"?"✓":v.s==="err"?"✗ "+(v.msg||""):"…"}</span></span>`).join(""); }
+
+/* ---------- map ---------- */
+const hash = (location.hash.match(/^#(\d+)\/([\d.]+)\/([\d.]+)/)||[]).slice(1).map(Number);
+const map = L.map("map",{zoomControl:true,preferCanvas:true}).setView(hash.length===3?[hash[1],hash[2]]:[60.19,24.97], hash.length===3?hash[0]:11);
+// CARTO's light basemap (OpenStreetMap data) works from local files; OSM's own tile server often refuses them.
+let tileErrors=0, switched=false;
+const carto=L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{maxZoom:20,subdomains:"abcd",attribution:"© OpenStreetMap contributors © CARTO"}).addTo(map);
+// Neighbourhood names sit in their own pane above the colours but below markers, and never catch clicks.
+map.createPane("names"); map.getPane("names").style.zIndex=450; map.getPane("names").style.pointerEvents="none";
+const nameLayer=L.layerGroup();
+carto.on("tileerror",()=>{ if(++tileErrors>6&&!switched){ switched=true; map.removeLayer(carto);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"}).addTo(map).bringToBack();
+  diag("Background map tiles from CARTO failed; switched to OpenStreetMap tiles."); }});
+map.on("moveend",()=>{const c=map.getCenter(); history.replaceState(null,"",`#${map.getZoom()}/${c.lat.toFixed(4)}/${c.lng.toFixed(4)}`);});
+const noiseLayer = L.tileLayer.wms("https://kartta.hel.fi/ws/geoserver/avoindata/wms",{layers:"avoindata:Meluselvitys_2022_Helsinki_yhteismelu_LAeg_7-22_NPM",format:"image/png",transparent:true,opacity:.55,attribution:"Noise: City of Helsinki 2022"});
+
+/* ---------- geometry helpers ---------- */
+function ringCentroid(r){let a=0,x=0,y=0;for(let i=0,j=r.length-1;i<r.length;j=i++){const f=r[j][0]*r[i][1]-r[i][0]*r[j][1];a+=f;x+=(r[j][0]+r[i][0])*f;y+=(r[j][1]+r[i][1])*f;}a*=.5;return a?{lng:x/(6*a),lat:y/(6*a),area:Math.abs(a)}:{lng:r[0][0],lat:r[0][1],area:0};}
+function centroid(g){const polys=g.type==="Polygon"?[g.coordinates]:g.coordinates;let best=null;for(const p of polys){const c=ringCentroid(p[0]);if(!best||c.area>best.area)best=c;}return best;}
+function km(a,b){const R=6371,dLa=(b.lat-a.lat)*Math.PI/180,dLo=(b.lng-a.lng)*Math.PI/180;const s=Math.sin(dLa/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(s));}
+function nearest(pt, list){let best=null,d=Infinity;for(const p of list){const k=km(pt,p);if(k<d){d=k;best=p;}}return best?{p:best,d}:null;}
+
+/* ---------- data stores ---------- */
+let areas = [];          // {code,name,props,center,layer,...derived}
+const byCode = {};
+const pois = {school1:[],school2:[],school3:[],schoolAny:[],rail:[],tram:[],daycare:[],playground:[],park:[],health:[],care:[]};
+
+/* ---------- Paavo (Statistics Finland) ---------- */
+async function loadPaavo(){
+  setStatus("paavo","wait");
+  const layers=["pno_tilasto_2026","pno_tilasto_2025","pno_tilasto"]; let lastErr="";
+  for(const lyr of layers){
+    const url=`https://geo.stat.fi/geoserver/postialue/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=postialue:${lyr}&outputFormat=application/json&srsName=EPSG:4326&CQL_FILTER=${encodeURIComponent("kunta='091'")}`;
+    try{
+      const r=await fetch(url); if(!r.ok){ lastErr=`${lyr}: HTTP ${r.status}`; continue; }
+      const gj=await r.json(); if(!gj.features||!gj.features.length) continue;
+      for(const f of gj.features){
+        const p=f.properties; for(const k in p) if(p[k]===-1) p[k]=null;
+        const a={code:p.postinumeroalue||p.posti_alue,name:p.nimi,p,geom:f.geometry,center:centroid(f.geometry),year:lyr};
+        derive(a); areas.push(a); byCode[a.code]=a;
+      }
+      setStatus("paavo","ok",lyr); return true;
+    }catch(e){ lastErr=`${lyr}: ${e.message}`; }
+  }
+  setStatus("paavo","err","could not reach geo.stat.fi");
+  diag(`Postal-code areas from Statistics Finland (geo.stat.fi) failed — ${lastErr||"no data returned"}. The area colours depend on this.`);
+  return false;
+}
+const share=(a,b)=>a!=null&&b?100*a/b:null;
+function derive(a){
+  const p=a.p;
+  const sum=(...k)=>k.reduce((s,x)=>s+(p[x]||0),0);
+  a.pop=p.he_vakiy; a.age=p.he_kika;
+  a.medHH=p.tr_mtu; a.meanHH=p.tr_ktu; a.medInc=p.hr_mtu;
+  a.kids=share(p.te_laps,p.te_taly); a.own=share(p.te_omis_as,p.te_taly);
+  a.rent=share(p.te_vuok_as,p.te_taly); a.hhSize=p.te_takk; a.dwSize=p.ra_as_kpa;
+  a.masters=share(p.ko_yl_kork,p.ko_ika18y); a.tertiary=share((p.ko_al_kork||0)+(p.ko_yl_kork||0),p.ko_ika18y);
+  a.unemp=share(p.pt_tyott,(p.pt_tyott||0)+(p.pt_tyoll||0));
+  a.over65=share(sum("he_65_69","he_70_74","he_75_79","he_80_84","he_85_"),p.he_vakiy);
+  a.density=p.pinta_ala? p.he_vakiy/(p.pinta_ala/1e6):null;
+  a.ages={"0–6":sum("he_0_2","he_3_6"),"7–17":sum("he_7_12","he_13_15","he_16_17"),"18–29":sum("he_18_19","he_20_24","he_25_29"),
+    "30–44":sum("he_30_34","he_35_39","he_40_44"),"45–64":sum("he_45_49","he_50_54","he_55_59","he_60_64"),"65+":sum("he_65_69","he_70_74","he_75_79","he_80_84","he_85_")};
+}
+
+/* ---------- PxWeb (Statistics Finland) ---------- */
+const PX="https://pxdata.stat.fi/PxWeb/api/v1/en/StatFin/";
+async function pxFind(folder, test){
+  const r=await fetch(PX+folder); if(!r.ok) throw new Error("table list "+r.status);
+  const list=await r.json(); return list.filter(t=>t.type==="t"&&test(t.text));
+}
+async function pxPostal(folder, tableTest, contentsTest, prefer){
+  const cands=await pxFind(folder,tableTest); if(!cands.length) throw new Error("no postal-code table");
+  const tbl=cands[0], url=PX+folder+"/"+tbl.id;
+  const meta=await (await fetch(url)).json();
+  const query=[]; let pcVar=null, yearLabel="";
+  for(const v of meta.variables){
+    const isPc=v.values.filter(x=>/^\d{5}$/.test(x)||/^\d{5}\b/.test(x)).length>50 || /postal|postinumero/i.test(v.text);
+    if(isPc){ pcVar=v.code; const sel=v.values.filter((x,i)=>/^00\d{3}/.test(x)||/^00\d{3}/.test(v.valueTexts[i])); query.push({code:v.code,selection:{filter:"item",values:sel}}); continue; }
+    if(v.time||/year|vuosi|quarter|time/i.test(v.code+v.text)){ const last=v.values[v.values.length-1]; yearLabel=v.valueTexts[v.values.length-1]; query.push({code:v.code,selection:{filter:"item",values:[last]}}); continue; }
+    if(/contents|tiedot/i.test(v.code+v.text)){ const i=v.valueTexts.findIndex(contentsTest); query.push({code:v.code,selection:{filter:"item",values:[v.values[i<0?0:i]]}}); continue; }
+    let i=v.valueTexts.findIndex(t=>prefer.some(re=>re.test(t))); if(i<0) i=0;
+    query.push({code:v.code,selection:{filter:"item",values:[v.values[i]]}});
+  }
+  const r=await fetch(url,{method:"POST",body:JSON.stringify({query,response:{format:"json-stat2"}})});
+  if(!r.ok) throw new Error("query "+r.status);
+  const js=await r.json(); const out={};
+  const dims=js.id, sizes=js.size, pcIdx=dims.indexOf(pcVar);
+  const cat=js.dimension[pcVar].category.index;
+  const stride=sizes.slice(pcIdx+1).reduce((a,b)=>a*b,1);
+  for(const [code,i] of Object.entries(cat)){ const v=js.value[i*stride]; const pc=(code.match(/\d{5}/)||[code])[0]; if(v!=null) out[pc]=v; }
+  return {values:out, label:tbl.text, period:yearLabel};
+}
+async function loadPrices(){
+  setStatus("prices","wait");
+  try{
+    const res=await pxPostal("ashi",t=>/postal code/i.test(t)&&/yearly/i.test(t)&&/square/i.test(t), t=>/square|m2|m²/i.test(t)&&!/number/i.test(t), [/total|yhteensä/i]);
+    for(const [pc,v] of Object.entries(res.values)) if(byCode[pc]) byCode[pc].price=v;
+    meta.priceYear=res.period; setStatus("prices","ok",res.period); return true;
+  }catch(e){ console.warn(e); setStatus("prices","err",e.message); diag("Dwelling prices (pxdata.stat.fi) failed — "+e.message); }
+}
+async function loadRents(){
+  // Rents by postal code (table 13eb) moved to Statistics Finland's archive database in June 2026; latest data 2025Q4.
+  setStatus("rents","wait");
+  const base="https://pxdata.stat.fi/PxWeb/api/v1/en/StatFin_Passiivi/asvu/";
+  try{
+    let id="statfinpas_asvu_pxt_13eb_2025q4.px";
+    let r=await fetch(base+id);
+    if(!r.ok){ // table renamed again: look for the postal-code rent table in the archive folder
+      const list=await (await fetch(base)).json();
+      const t=list.filter(x=>/postal code/i.test(x.text)&&/rent/i.test(x.text)).sort((a,b)=>b.id.localeCompare(a.id))[0];
+      if(!t) throw new Error("rent table not found"); id=t.id; r=await fetch(base+id);
+    }
+    const m=await r.json(); const V=c=>m.variables.find(v=>v.code===c)||m.variables.find(v=>new RegExp(c,"i").test(v.text));
+    const vq=m.variables.find(v=>v.time)||V("Quarter"), vp=V("Postinumero")||V("Postal"), vr=V("Huoneluku")||V("rooms"), vt=V("Tiedot")||V("Information");
+    const quarters=vq.values.slice(-4), pcs=vp.values.filter(v=>/^00\d{3}/.test(v));
+    const cnt=vt.values[vt.valueTexts.findIndex(t=>/number|lukum/i.test(t))], rent=vt.values[vt.valueTexts.findIndex(t=>/rent|vuokra/i.test(t))];
+    const q={query:[{code:vq.code,selection:{filter:"item",values:quarters}},{code:vp.code,selection:{filter:"item",values:pcs}},
+      {code:vr.code,selection:{filter:"item",values:vr.values}},{code:vt.code,selection:{filter:"item",values:[cnt,rent]}}],response:{format:"json-stat2"}};
+    const res=await fetch(base+id,{method:"POST",body:JSON.stringify(q)}); if(!res.ok) throw new Error("query HTTP "+res.status);
+    const js=await res.json();
+    const pos=k=>js.id.indexOf(k), size=js.size, idx=(d,code)=>js.dimension[d].category.index[code];
+    const at=(qv,pv,rv,tv)=>{const c=[]; c[pos(vq.code)]=idx(vq.code,qv); c[pos(vp.code)]=idx(vp.code,pv); c[pos(vr.code)]=idx(vr.code,rv); c[pos(vt.code)]=idx(vt.code,tv);
+      let k=0; for(let d=0;d<size.length;d++) k=k*size[d]+c[d]; return js.value[k];};
+    let n=0;
+    for(const pc of pcs){
+      const a=byCode[pc.slice(0,5)]; if(!a) continue;
+      let s=0,w=0; const rooms={};
+      vr.values.forEach((rv,ri)=>{let rs=0,rw=0; for(const qv of quarters){const c=at(qv,pc,rv,cnt), v=at(qv,pc,rv,rent); if(c&&v){rs+=c*v;rw+=c;}}
+        if(rw){rooms[vr.valueTexts[ri]]=rs/rw; s+=rs; w+=rw;}});
+      if(w){a.rentM2=s/w; a.rentRooms=rooms; a.rentN=w; n++;}
+    }
+    meta.rentYear=quarters[0]+"–"+quarters[quarters.length-1];
+    setStatus("rents","ok",meta.rentYear+", "+n+" areas"); return true;
+  }catch(e){ console.warn(e); setStatus("rents","err",e.message); diag("Rents (pxdata.stat.fi) failed — "+e.message); }
+}
+const meta={};
+
+/* ---------- OpenStreetMap via Overpass ---------- */
+async function loadOSM(){
+  setStatus("osm","wait");
+  const b=HEL_BBOX.join(",");
+  const q=`[out:json][timeout:90];(nwr["amenity"="school"](${b});nwr["amenity"="kindergarten"](${b});nwr["leisure"="playground"](${b});way["leisure"="park"](${b});
+  nwr["amenity"~"^(hospital|clinic)$"](${b});nwr["healthcare"="centre"](${b});nwr["amenity"="nursing_home"](${b});nwr["social_facility"="nursing_home"](${b});
+  node["railway"="station"](${b});node["station"="subway"](${b});node["railway"="tram_stop"](${b}););out center tags;`;
+  const mirrors=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+  for(const m of mirrors){
+    try{
+      const r=await fetch(m,{method:"POST",body:"data="+encodeURIComponent(q),headers:{"Content-Type":"application/x-www-form-urlencoded"}});
+      if(!r.ok) continue; const js=await r.json(); sortPOIs(js.elements); setStatus("osm","ok"); return true;
+    }catch(e){ console.warn(e); }
+  }
+  setStatus("osm","err","Overpass unavailable"); diag("Schools, transit and parks (OpenStreetMap Overpass) failed to load. Try reloading in a minute; the service is sometimes busy.");
+}
+function sortPOIs(els){
+  for(const e of els){
+    const t=e.tags||{}; const lat=e.lat??e.center?.lat, lng=e.lon??e.center?.lon; if(lat==null) continue;
+    const p={lat,lng,name:t["name:en"]||t.name||t["name:sv"]||"(unnamed)",tags:t};
+    if(t.amenity==="school"){
+      const lv=(t["isced:level"]||"").split(/[;,-]/).map(s=>s.trim()); const n=(t.name||"")+" "+(t["name:sv"]||"");
+      let any=true;
+      if(lv.includes("1")||/ala-aste|alakoulu|lågstadie|peruskoulu|grundskola|comprehensive/i.test(n)){pois.school1.push(p);any=false;}
+      if(lv.includes("2")||/yläaste|yläkoulu|högstadie|peruskoulu|grundskola|comprehensive/i.test(n)){pois.school2.push(p);any=false;}
+      if(lv.includes("3")||/lukio|gymnasium|lyseo|upper secondary/i.test(n)){pois.school3.push(p);any=false;}
+      if(any){pois.school1.push(p);} // untagged schools count as primary-level by default
+      pois.schoolAny.push(p);
+    }
+    else if(t.amenity==="kindergarten") pois.daycare.push(p);
+    else if(t.leisure==="playground") pois.playground.push(p);
+    else if(t.leisure==="park") pois.park.push(p);
+    else if(t.amenity==="nursing_home"||t.social_facility==="nursing_home") pois.care.push(p);
+    else if(t.amenity==="hospital"||t.amenity==="clinic"||t.healthcare==="centre") pois.health.push(p);
+    else if(t.railway==="tram_stop") pois.tram.push(p);
+    else if(t.railway==="station"||t.station==="subway") pois.rail.push(p);
+  }
+  // de-duplicate rail stations by name
+  const seen=new Set(); pois.rail=pois.rail.filter(p=>{const k=p.name; if(seen.has(k))return false; seen.add(k); return true;});
+}
+function areaAccess(){
+  for(const a of areas){
+    const c=a.center;
+    const g=(k)=>{const n=nearest(c,pois[k]); return n?n:{p:null,d:null};};
+    a.near={school1:g("school1"),school2:g("school2"),school3:g("school3"),rail:g("rail"),tram:g("tram"),daycare:g("daycare"),health:g("health")};
+    a.playgrounds=pois.playground.filter(p=>km(c,p)<=0.75).length;
+  }
+}
+
+
+/* ---------- school figures (from väestökello.fi and s2koulut.xyz) ---------- */
+// vk* = väestökello.fi: pupils whose mother tongue is not Finnish/Swedish/Sami, school year 2025/26 (source: Vipunen/KOSKI).
+// s2* = s2koulut.xyz: pupils studying Finnish as a second language (S2); avg = leavers' grade average.
+const SCHOOLS=[{"name":"Aleksis Kiven peruskoulu","s2name":"Aleksis Kiven peruskoulu","grades":"1–9","avg":8.18,"s2":51,"tot":528,"s2pct":9.7,"pc":"00510","vkFor":"93","vkTot":651,"vkPct":"14.3","vkPct1920":"12.1"},{"name":"Apollon yhteiskoulu","s2name":"Apollon yhteiskoulu","grades":"7–9","avg":7.65,"s2":102,"tot":267,"s2pct":38.2,"pc":"00410","vkFor":"105","vkTot":210,"vkPct":"50.0","vkPct1920":"25.6"},{"name":"Arabian peruskoulu","s2name":"Arabian peruskoulu","grades":"1–9","avg":8.32,"s2":63,"tot":849,"s2pct":7.4,"pc":"00560","vkFor":"111","vkTot":828,"vkPct":"13.4","vkPct1920":"5.8"},{"name":"Aurinkolahden peruskoulu","s2name":"Aurinkolahden peruskoulu","grades":"1–9","avg":8.36,"s2":255,"tot":825,"s2pct":30.9,"pc":"00990","vkFor":"441","vkTot":936,"vkPct":"47.1","vkPct1920":"27.5"},{"name":"Botby grundskola","s2name":"Botby grundskola","grades":"1–9","avg":8.21,"s2":0,"tot":525,"s2pct":0.0,"pc":"00900","vkFor":"48","vkTot":549,"vkPct":"8.7","vkPct1920":"2.3"},{"name":"Brändö lågstadieskola","s2name":"Brändö lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":126,"s2pct":0.0,"pc":"00570","vkFor":"12","vkTot":135,"vkPct":"8.9","vkPct1920":"1.0-3.9"},{"name":"Degerö lågstadieskola","s2name":"Degerö lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":144,"s2pct":0.0,"pc":"00810","vkFor":"1-4","vkTot":141,"vkPct":"0.7-2.8","vkPct1920":"0.8-3.3"},{"name":"Drumsö lågstadieskola","s2name":"Drumsö lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":318,"s2pct":0.0,"pc":"00200","vkFor":"6","vkTot":312,"vkPct":"1.9","vkPct1920":"0.5-2.1"},{"name":"Elias-koulu","s2name":"Elias-koulu","grades":"1–9","avg":8.3,"s2":4,"tot":180,"s2pct":2.2,"pc":"00150","vkFor":"24","vkTot":198,"vkPct":"12.1","vkPct1920":"9.5"},{"name":"Englantilainen koulu","s2name":"Englantilainen koulu","grades":"1–9","avg":8.64,"s2":102,"tot":420,"s2pct":24.3,"pc":"00270","vkFor":"147","vkTot":414,"vkPct":"35.5","vkPct1920":"27.2"},{"name":"Grundskolan Norsen","s2name":"Grundskolan Norsen","grades":"1–9","avg":8.36,"s2":0,"tot":792,"s2pct":0.0,"pc":"00130","vkFor":"21","vkTot":840,"vkPct":"2.5","vkPct1920":"1.8"},{"name":"Helsingin Juutalainen Yhteiskoulu","s2name":"H:gin Juutalainen Yhteiskoulu","grades":"1–9","avg":7.44,"s2":21,"tot":99,"s2pct":21.2,"pc":"00180","vkFor":"15","vkTot":75,"vkPct":"20.0","vkPct1920":"16.7-66.7"},{"name":"Helsingin Ranskalais-Suomalainen koulu","s2name":"H:gin ransk.-suom. koulu","grades":"1–9","avg":8.83,"s2":54,"tot":612,"s2pct":8.8,"pc":"00350","vkFor":"81","vkTot":555,"vkPct":"14.6","vkPct1920":"9.1"},{"name":"Helsingin Rudolf Steiner -koulu","s2name":"H:gin Rudolf Steiner -koulu","grades":"1–9","avg":8.59,"s2":4,"tot":507,"s2pct":0.8,"pc":"00270","vkFor":"42","vkTot":366,"vkPct":"11.5","vkPct1920":"5.4"},{"name":"Haagan peruskoulu","s2name":"Haagan peruskoulu","grades":"1–9","avg":8.22,"s2":48,"tot":732,"s2pct":6.6,"pc":"00320","vkFor":"84","vkTot":837,"vkPct":"10.0","vkPct1920":"6.2"},{"name":"Helsingin Kristillinen koulu","s2name":"Helsingin Kristillinen koulu","grades":"1–9","avg":8.32,"s2":33,"tot":150,"s2pct":22.0,"pc":"00770","vkFor":"51","vkTot":225,"vkPct":"22.7","vkPct1920":"25.0"},{"name":"Helsingin Montessorikoulu","s2name":"Helsingin Montessori-koulu","grades":"1–5","avg":null,"s2":0,"tot":18,"s2pct":0.0,"pc":"00820","vkFor":"15","vkTot":108,"vkPct":"13.9","vkPct1920":"16.7-66.7"},{"name":"Helsingin normaalilyseo","s2name":"Helsingin normaalilyseo","grades":"1–9","avg":8.88,"s2":15,"tot":429,"s2pct":3.5,"pc":"00120","vkFor":"36","vkTot":474,"vkPct":"7.6","vkPct1920":"7.7"},{"name":"Helsingin Saksalainen koulu","s2name":"Helsingin saksalainen koulu","grades":"1–9","avg":9.21,"s2":78,"tot":570,"s2pct":13.7,"pc":"00100","vkFor":"126","vkTot":555,"vkPct":"22.7","vkPct1920":"23.5"},{"name":"Helsingin Suomalainen Yhteiskoulu","s2name":"Helsingin Suomalainen Yhteisk.","grades":"3–9","avg":9.3,"s2":33,"tot":723,"s2pct":4.6,"pc":"00320","vkFor":"24","vkTot":705,"vkPct":"3.4","vkPct1920":"3.7"},{"name":"Helsingin Uusi yhteiskoulu","s2name":"Helsingin Uusi yhteiskoulu","grades":"7–9","avg":7.84,"s2":114,"tot":348,"s2pct":32.8,"pc":"00710","vkFor":"159","vkTot":411,"vkPct":"38.7","vkPct1920":"31.5"},{"name":"Helsingin yhteislyseo","s2name":"Helsingin yhteislyseo","grades":"7–9","avg":7.54,"s2":174,"tot":465,"s2pct":37.4,"pc":"00940","vkFor":"219","vkTot":477,"vkPct":"45.9","vkPct1920":"32.9"},{"name":"Hertsikan ala-aste","s2name":"Hertsikan ala-aste","grades":"1–6","avg":null,"s2":42,"tot":363,"s2pct":11.6,"pc":"00800","vkFor":"75","vkTot":426,"vkPct":"17.6","vkPct1920":"10.7"},{"name":"Herttoniemenrannan ala-aste","s2name":"Hertton.rannan ala-asteen koul","grades":"1–6","avg":null,"s2":165,"tot":480,"s2pct":34.4,"pc":"00810","vkFor":"183","vkTot":483,"vkPct":"37.9","vkPct1920":"24.8"},{"name":"Herttoniemen yhteiskoulu","s2name":"Herttoniemen yhteiskoulu","grades":"7–9","avg":8.76,"s2":9,"tot":216,"s2pct":4.2,"pc":"00800","vkFor":"51","vkTot":399,"vkPct":"12.8","vkPct1920":"10.5"},{"name":"Hietakummun ala-aste","s2name":"Hietakummun ala-asteen koulu","grades":"1–6","avg":null,"s2":114,"tot":381,"s2pct":29.9,"pc":"00700","vkFor":"147","vkTot":369,"vkPct":"39.8","vkPct1920":"22.6"},{"name":"Hiidenkiven peruskoulu","s2name":"Hiidenkiven peruskoulu","grades":"1–9","avg":8.9,"s2":138,"tot":840,"s2pct":16.4,"pc":"00730","vkFor":"126","vkTot":771,"vkPct":"16.3","vkPct1920":"20.8"},{"name":"Hoplaxskolan","s2name":"Hoplaxskolan","grades":"1–9","avg":8.29,"s2":0,"tot":726,"s2pct":0.0,"pc":"00330","vkFor":"27","vkTot":768,"vkPct":"3.5","vkPct1920":"3.7"},{"name":"Helsingin yliopiston Viikin normaalikoulu","s2name":"HY Viikin normaalikoulu","grades":"1–9","avg":8.54,"s2":84,"tot":711,"s2pct":11.8,"pc":"00790","vkFor":"186","vkTot":759,"vkPct":"24.5","vkPct1920":"15.0"},{"name":"Itäkeskuksen peruskoulu","s2name":"Itäkeskuksen peruskoulu","grades":"1–9","avg":7.81,"s2":210,"tot":390,"s2pct":53.8,"pc":"00900","vkFor":"261","vkTot":366,"vkPct":"71.3","vkPct1920":"42.5"},{"name":"Jätkäsaaren peruskoulu","s2name":"Jätkäsaaren peruskoulu","grades":"1–8","avg":8.39,"s2":120,"tot":627,"s2pct":19.1,"pc":"00220","vkFor":"177","vkTot":843,"vkPct":"21.0","vkPct1920":"16.7"},{"name":"Kaisaniemen ala-aste","s2name":"Kaisaniemen ala-asteen koulu","grades":"1–6","avg":null,"s2":27,"tot":417,"s2pct":6.5,"pc":"00100","vkFor":"36","vkTot":387,"vkPct":"9.3","vkPct1920":"6.2"},{"name":"Kalasataman peruskoulu","s2name":"Kalasataman peruskoulu","grades":"1–9","avg":7.51,"s2":93,"tot":384,"s2pct":24.2,"pc":"00540","vkFor":"165","vkTot":654,"vkPct":"25.2","vkPct1920":"28.9"},{"name":"Kallion ala-aste","s2name":"Kallion ala-asteen koulu","grades":"1–6","avg":null,"s2":9,"tot":456,"s2pct":2.0,"pc":"00530","vkFor":"57","vkTot":471,"vkPct":"12.1","vkPct1920":"5.5"},{"name":"Kankarepuiston peruskoulu","s2name":"Kankarepuiston peruskoulu","grades":"1–9","avg":7.5,"s2":240,"tot":519,"s2pct":46.2,"pc":"00770","vkFor":"393","vkTot":651,"vkPct":"60.4","vkPct1920":"43.5"},{"name":"Kannelmäen peruskoulu","s2name":"Kannelmäen peruskoulu","grades":"1–9","avg":7.85,"s2":390,"tot":1110,"s2pct":35.1,"pc":"00420","vkFor":"591","vkTot":1251,"vkPct":"47.2","vkPct1920":"29.8"},{"name":"Karviaistien koulu","s2name":"Karviaistien koulu","grades":"1–9","avg":7.59,"s2":30,"tot":69,"s2pct":43.5,"pc":"00700","vkFor":"30","vkTot":63,"vkPct":"47.6","vkPct1920":"36.4"},{"name":"Katajanokan ala-aste","s2name":"Katajanokan ala-asteen koulu","grades":"1–6","avg":null,"s2":6,"tot":201,"s2pct":3.0,"pc":"00160","vkFor":"33","vkTot":219,"vkPct":"15.1","vkPct1920":"10.3"},{"name":"Keinutien ala-aste","s2name":"Keinutien ala-asteen koulu","grades":"1–6","avg":null,"s2":264,"tot":459,"s2pct":57.5,"pc":"00940","vkFor":"363","vkTot":573,"vkPct":"63.4","vkPct1920":"50.7"},{"name":"Konalan ala-aste","s2name":"Konalan ala-asteen koulu","grades":"1–6","avg":null,"s2":63,"tot":282,"s2pct":22.3,"pc":"00390","vkFor":"111","vkTot":309,"vkPct":"35.9","vkPct1920":"15.3"},{"name":"Kontulan ala-aste","s2name":"Kontulan ala-asteen koulu","grades":"1–6","avg":null,"s2":177,"tot":417,"s2pct":42.4,"pc":"00940","vkFor":"192","vkTot":411,"vkPct":"46.7","vkPct1920":"42.6"},{"name":"Koskelan ala-aste","s2name":"Koskelan ala-asteen koulu","grades":"1–4","avg":null,"s2":48,"tot":153,"s2pct":31.4,"pc":"00600","vkFor":"36","vkTot":96,"vkPct":"37.5","vkPct1920":"36.4"},{"name":"Kottby grundskola","s2name":"Kottby Lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":186,"s2pct":0.0,"pc":"00600","vkFor":"18","vkTot":552,"vkPct":"3.3","vkPct1920":"0.7-2.7"},{"name":"Kruununhaan yläaste","s2name":"Kruununhaan yläasteen koulu","grades":"7–9","avg":8.45,"s2":21,"tot":471,"s2pct":4.5,"pc":"00170","vkFor":"30","vkTot":501,"vkPct":"6.0","vkPct1920":"5.8"},{"name":"Kruunuvuorenrannan peruskoulu","s2name":"Kruunuvuorenrannan peruskoulu","grades":"","avg":null,"s2":9,"tot":27,"s2pct":33.3,"pc":"00590","vkFor":"84","vkTot":183,"vkPct":"45.9","vkPct1920":"na"},{"name":"Kulosaaren ala-aste","s2name":"Kulosaaren ala-asteen koulu","grades":"1–6","avg":null,"s2":63,"tot":387,"s2pct":16.3,"pc":"00570","vkFor":"78","vkTot":384,"vkPct":"20.3","vkPct1920":"12.0"},{"name":"Kulosaaren yhteiskoulu","s2name":"Kulosaaren yhteiskoulu","grades":"7–9","avg":8.81,"s2":69,"tot":453,"s2pct":15.2,"pc":"00570","vkFor":"129","vkTot":582,"vkPct":"22.2","vkPct1920":"15.1"},{"name":"Käpylän peruskoulu","s2name":"Käpylän peruskoulu","grades":"1–9","avg":8.5,"s2":108,"tot":936,"s2pct":11.5,"pc":"00610","vkFor":"144","vkTot":906,"vkPct":"15.9","vkPct1920":"12.5"},{"name":"Laajasalon peruskoulu","s2name":"Laajasalon peruskoulu","grades":"1–9","avg":7.9,"s2":129,"tot":969,"s2pct":13.3,"pc":"00840","vkFor":"150","vkTot":984,"vkPct":"15.2","vkPct1920":"13.5"},{"name":"Laakavuoren ala-aste","s2name":"Laakavuoren ala-aste","grades":"1–6","avg":null,"s2":117,"tot":249,"s2pct":47.0,"pc":"00970","vkFor":"147","vkTot":243,"vkPct":"60.5","vkPct1920":"48.1"},{"name":"Latokartanon peruskoulu","s2name":"Latokartanon peruskoulu","grades":"1–9","avg":7.76,"s2":171,"tot":699,"s2pct":24.5,"pc":"00790","vkFor":"261","vkTot":768,"vkPct":"34.0","vkPct1920":"25.7"},{"name":"Lauttasaaren ala-aste","s2name":"Lauttasaaren ala-asteen koulu","grades":"1–6","avg":null,"s2":24,"tot":501,"s2pct":4.8,"pc":"00200","vkFor":"36","vkTot":591,"vkPct":"6.1","vkPct1920":"6.2"},{"name":"Lauttasaaren yhteiskoulu","s2name":"Lauttasaaren yhteiskoulu","grades":"7–9","avg":8.66,"s2":9,"tot":501,"s2pct":1.8,"pc":"00200","vkFor":"33","vkTot":555,"vkPct":"5.9","vkPct1920":"4.2"},{"name":"Maatullin peruskoulu","s2name":"Maatullin peruskoulu","grades":"1–6","avg":null,"s2":246,"tot":525,"s2pct":46.9,"pc":"00750","vkFor":"315","vkTot":606,"vkPct":"52.0","vkPct1920":"38.2"},{"name":"Malmin peruskoulu","s2name":"Malmin peruskoulu","grades":"1–9","avg":7.99,"s2":195,"tot":666,"s2pct":29.3,"pc":"00700","vkFor":"360","vkTot":729,"vkPct":"49.4","vkPct1920":"28.1"},{"name":"Malminkartanon ala-aste","s2name":"Malminkartanon ala-ast. koulu","grades":"1–6","avg":null,"s2":87,"tot":246,"s2pct":35.4,"pc":"00410","vkFor":"144","vkTot":273,"vkPct":"52.7","vkPct1920":"30.1"},{"name":"Marjatta-koulu","s2name":"Marjatta-koulu","grades":"1–9","avg":null,"s2":0,"tot":48,"s2pct":0.0,"pc":"00400","vkFor":"6","vkTot":51,"vkPct":"11.8","vkPct1920":"2.0-7.8"},{"name":"Maunulan ala-aste","s2name":"Maunulan ala-asteen koulu","grades":"1–6","avg":null,"s2":159,"tot":456,"s2pct":34.9,"pc":"00630","vkFor":"216","vkTot":573,"vkPct":"37.7","vkPct1920":"30.2"},{"name":"Maunulan yhteiskoulu - Helsingin matematiikkalukio","s2name":"Maunulan yht.k.-Hgin mat.lukio","grades":"7–9","avg":8.35,"s2":72,"tot":423,"s2pct":17.0,"pc":"00630","vkFor":"162","vkTot":507,"vkPct":"32.0","vkPct1920":"27.9"},{"name":"Meilahden ala-asteen koulu","s2name":"Meilahden ala-asteen koulu","grades":"1–6","avg":null,"s2":48,"tot":471,"s2pct":10.2,"pc":"00270","vkFor":"81","vkTot":426,"vkPct":"19.0","vkPct1920":"15.4"},{"name":"Meilahden yläaste","s2name":"Meilahden yläasteen koulu","grades":"7–9","avg":8.36,"s2":78,"tot":447,"s2pct":17.4,"pc":"00270","vkFor":"117","vkTot":471,"vkPct":"24.8","vkPct1920":"23.3"},{"name":"Mellunmäen ala-aste","s2name":"Mellunmäen ala-asteen koulu","grades":"1–6","avg":null,"s2":105,"tot":345,"s2pct":30.4,"pc":"00970","vkFor":"162","vkTot":384,"vkPct":"42.2","vkPct1920":"23.7"},{"name":"Merilahden peruskoulu","s2name":"Merilahden peruskoulu","grades":"1–9","avg":7.86,"s2":408,"tot":711,"s2pct":57.4,"pc":"00980","vkFor":"423","vkTot":678,"vkPct":"62.4","vkPct1920":"51.0"},{"name":"Metsolan ala-asteen koulu","s2name":"Metsolan ala-asteen koulu","grades":"1–6","avg":null,"s2":6,"tot":366,"s2pct":1.6,"pc":"00680","vkFor":"18","vkTot":354,"vkPct":"5.1","vkPct1920":"4.2"},{"name":"Minervaskolan","s2name":"Minervaskolan","grades":"1–6","avg":null,"s2":0,"tot":90,"s2pct":0.0,"pc":"00100","vkFor":"12","vkTot":219,"vkPct":"5.5","vkPct1920":"6.5"},{"name":"Munkkiniemen ala-asteen koulu","s2name":"Munkkiniemen ala-asteen koulu","grades":"1–6","avg":null,"s2":39,"tot":405,"s2pct":9.6,"pc":"00330","vkFor":"45","vkTot":408,"vkPct":"11.0","vkPct1920":"6.9"},{"name":"Munkkiniemen yhteiskoulu","s2name":"Munkkiniemen yhteiskoulu","grades":"7–9","avg":8.48,"s2":36,"tot":477,"s2pct":7.5,"pc":"00330","vkFor":"54","vkTot":489,"vkPct":"11.0","vkPct1920":"6.3"},{"name":"Munkkivuoren ala-aste","s2name":"Munkkivuoren ala-asteen koulu","grades":"1–6","avg":null,"s2":45,"tot":435,"s2pct":10.3,"pc":"00350","vkFor":"42","vkTot":402,"vkPct":"10.4","vkPct1920":"9.9"},{"name":"Myllypuron peruskoulu","s2name":"Myllypuron peruskoulu","grades":"7–9","avg":7.61,"s2":285,"tot":828,"s2pct":34.4,"pc":"00920","vkFor":"384","vkTot":981,"vkPct":"39.1","vkPct1920":"38.4"},{"name":"Månsas lågstadieskola","s2name":"Månsas lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":90,"s2pct":0.0,"pc":"00630","vkFor":"1-4","vkTot":117,"vkPct":"0.9-3.4","vkPct1920":"na"},{"name":"Naulakallion koulu","s2name":"Naulakallion koulu","grades":"5–9","avg":5.84,"s2":6,"tot":21,"s2pct":28.6,"pc":"00970","vkFor":"12","vkTot":30,"vkPct":"40.0","vkPct1920":"40.0"},{"name":"Nordsjö lågstadieskola","s2name":"Nordsjö lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":132,"s2pct":0.0,"pc":"00980","vkFor":"12","vkTot":135,"vkPct":"8.9","vkPct1920":"5.3"},{"name":"Oulunkylän ala-aste","s2name":"Oulunkylän ala-asteen koulu","grades":"1–6","avg":null,"s2":114,"tot":738,"s2pct":15.4,"pc":"00640","vkFor":"132","vkTot":828,"vkPct":"15.9","vkPct1920":"11.6"},{"name":"Oulunkylän yhteiskoulu","s2name":"Oulunkylän yhteiskoulu","grades":"7–9","avg":8.54,"s2":30,"tot":483,"s2pct":6.2,"pc":"00640","vkFor":"78","vkTot":597,"vkPct":"13.1","vkPct1920":"6.5"},{"name":"Pakilan ala-asteen koulu","s2name":"Pakilan ala-asteen koulu","grades":"1–6","avg":null,"s2":6,"tot":495,"s2pct":1.2,"pc":"00660","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Pakilan yläasteen koulu","s2name":"Pakilan yläasteen koulu","grades":"7–9","avg":8.73,"s2":4,"tot":390,"s2pct":1.0,"pc":"00660","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Paloheinän ala-aste","s2name":"Paloheinän ala-asteen koulu","grades":"1–6","avg":null,"s2":12,"tot":444,"s2pct":2.7,"pc":"00670","vkFor":"30","vkTot":429,"vkPct":"7.0","vkPct1920":"3.1"},{"name":"Pasilan peruskoulu","s2name":"Pasilan peruskoulu","grades":"1–9","avg":8.32,"s2":123,"tot":743,"s2pct":16.6,"pc":"00510","vkFor":"255","vkTot":966,"vkPct":"26.4","vkPct1920":"37.0"},{"name":"Pihkapuiston ala-aste","s2name":"Pihkapuiston ala-asteen koulu","grades":"1–6","avg":null,"s2":84,"tot":240,"s2pct":35.0,"pc":"00410","vkFor":"117","vkTot":258,"vkPct":"45.3","vkPct1920":"35.9"},{"name":"Pihlajamäen ala-asteen koulu","s2name":"Pihlajamäen ala-asteen koulu","grades":"1–6","avg":null,"s2":147,"tot":426,"s2pct":34.5,"pc":"00710","vkFor":"168","vkTot":429,"vkPct":"39.2","vkPct1920":"31.5"},{"name":"Pihlajiston ala-aste","s2name":"Pihlajiston ala-asteen koulu","grades":"1–6","avg":null,"s2":165,"tot":471,"s2pct":35.0,"pc":"00710","vkFor":"192","vkTot":441,"vkPct":"43.5","vkPct1920":"28.1"},{"name":"Pikku-Huopalahden ala-aste","s2name":"Pikku Huopalahden ala-aste","grades":"1–6","avg":null,"s2":75,"tot":216,"s2pct":34.7,"pc":"00300","vkFor":"93","vkTot":216,"vkPct":"43.1","vkPct1920":"29.6"},{"name":"Pitäjänmäen peruskoulu","s2name":"Pitäjänmäen peruskoulu","grades":"1–9","avg":7.9,"s2":159,"tot":465,"s2pct":34.2,"pc":"00370","vkFor":"225","vkTot":462,"vkPct":"48.7","vkPct1920":"35.7"},{"name":"Pohjois-Haagan ala-aste","s2name":"Pohjois-Haagan ala-ast. koulu","grades":"1–6","avg":null,"s2":111,"tot":513,"s2pct":21.6,"pc":"00400","vkFor":"171","vkTot":564,"vkPct":"30.3","vkPct1920":"20.5"},{"name":"Pohjois-Haagan yhteiskoulu","s2name":"Pohjois-Haagan yhteiskoulu","grades":"7–9","avg":8.52,"s2":33,"tot":447,"s2pct":7.4,"pc":"00400","vkFor":"75","vkTot":450,"vkPct":"16.7","vkPct1920":"11.7"},{"name":"Poikkilaakson ala-asteen koulu","s2name":"Poikkilaakson ala-asteen koulu","grades":"1–6","avg":null,"s2":27,"tot":276,"s2pct":9.8,"pc":"00850","vkFor":"42","vkTot":240,"vkPct":"17.5","vkPct1920":"10.8"},{"name":"Porolahden peruskoulu","s2name":"Porolahden peruskoulu","grades":"1–9","avg":8.13,"s2":240,"tot":978,"s2pct":24.5,"pc":"00820","vkFor":"243","vkTot":1050,"vkPct":"23.1","vkPct1920":"24.4"},{"name":"Puistolan peruskoulu","s2name":"Puistolan peruskoulu","grades":"1–9","avg":8.25,"s2":72,"tot":717,"s2pct":10.0,"pc":"00760","vkFor":"90","vkTot":690,"vkPct":"13.0","vkPct1920":"11.2"},{"name":"Puistolanraitin ala-aste","s2name":"Puistolanraitin ala-ast. koulu","grades":"1–6","avg":null,"s2":30,"tot":459,"s2pct":6.5,"pc":"00760","vkFor":"51","vkTot":420,"vkPct":"12.1","vkPct1920":"7.1"},{"name":"Puistopolun peruskoulu","s2name":"Puistopolun peruskoulu","grades":"1–9","avg":8.19,"s2":339,"tot":804,"s2pct":42.2,"pc":"00980","vkFor":"387","vkTot":813,"vkPct":"47.6","vkPct1920":"37.6"},{"name":"Pukinmäenkaaren peruskoulu","s2name":"Pukinmäenkaaren peruskoulu","grades":"1–9","avg":8.6,"s2":255,"tot":972,"s2pct":26.2,"pc":"00720","vkFor":"297","vkTot":972,"vkPct":"30.6","vkPct1920":"25.1"},{"name":"Puotilan ala-asteen koulu","s2name":"Puotilan ala-asteen koulu","grades":"1–6","avg":null,"s2":120,"tot":369,"s2pct":32.5,"pc":"00910","vkFor":"357","vkTot":936,"vkPct":"38.1","vkPct1920":"28.3"},{"name":"Ressun peruskoulu","s2name":"Ressun peruskoulu","grades":"1–9","avg":8.53,"s2":246,"tot":636,"s2pct":38.7,"pc":"00180","vkFor":"330","vkTot":750,"vkPct":"44.0","vkPct1920":"27.0"},{"name":"Roihuvuoren ala-aste","s2name":"Roihuvuoren ala-asteen koulu","grades":"1–6","avg":null,"s2":186,"tot":447,"s2pct":41.6,"pc":"00820","vkFor":"102","vkTot":309,"vkPct":"33.0","vkPct1920":"36.6"},{"name":"Crusellin peruskoulu","s2name":"Ruoholahden ala-asteen koulu","grades":"1–6","avg":null,"s2":60,"tot":255,"s2pct":23.5,"pc":"00180","vkFor":"87","vkTot":276,"vkPct":"31.5","vkPct1920":"20.2"},{"name":"Sakarinmäen peruskoulu","s2name":"Sakarinmäen peruskoulu","grades":"1–9","avg":8.36,"s2":24,"tot":240,"s2pct":10.0,"pc":"00890","vkFor":"39","vkTot":225,"vkPct":"17.3","vkPct1920":"6.2"},{"name":"Santahaminan ala-aste","s2name":"Santahaminan ala-asteen koulu","grades":"1–6","avg":null,"s2":6,"tot":135,"s2pct":4.4,"pc":"00860","vkFor":"21","vkTot":135,"vkPct":"15.6","vkPct1920":"4.5"},{"name":"Siltamäen ala-aste","s2name":"Siltamäen ala-asteen koulu","grades":"1–6","avg":null,"s2":84,"tot":309,"s2pct":27.2,"pc":"00740","vkFor":"90","vkTot":294,"vkPct":"30.6","vkPct1920":"24.5"},{"name":"Snellmanin ala-aste","s2name":"Snellmanin ala-asteen koulu","grades":"1–6","avg":null,"s2":6,"tot":315,"s2pct":1.9,"pc":"00120","vkFor":"27","vkTot":249,"vkPct":"10.8","vkPct1920":"7.6"},{"name":"Solakallion koulu","s2name":"Solakallion koulu","grades":"1–9","avg":null,"s2":4,"tot":12,"s2pct":33.3,"pc":"00680","vkFor":"1-4","vkTot":null,"vkPct":"na","vkPct1920":"33.3"},{"name":"Sophie Mannerheimin koulu","s2name":"Sophie Mannerheimin koulu","grades":"1–9","avg":7.9,"s2":9,"tot":87,"s2pct":10.3,"pc":"00250","vkFor":"12","vkTot":105,"vkPct":"11.4","vkPct1920":"5.6"},{"name":"Staffansby lågstadieskola","s2name":"Staffansby lågstadieskola","grades":"1–6","avg":null,"s2":0,"tot":24,"s2pct":0.0,"pc":"00780","vkFor":"9","vkTot":177,"vkPct":"5.1","vkPct1920":"7.4"},{"name":"Strömbergin ala-aste","s2name":"Strömbergin ala-asteen koulu","grades":"1–6","avg":null,"s2":60,"tot":156,"s2pct":38.5,"pc":"00380","vkFor":"84","vkTot":153,"vkPct":"54.9","vkPct1920":"33.3"},{"name":"Suomalais-venäläinen koulu","s2name":"Suomalais-venäläinen koulu","grades":"1–9","avg":8.29,"s2":192,"tot":483,"s2pct":39.8,"pc":"00430","vkFor":"222","vkTot":537,"vkPct":"41.3","vkPct1920":"36.5"},{"name":"Suomenlinnan ala-asteen koulu","s2name":"Suomenlinnan ala-asteen koulu","grades":"1–6","avg":null,"s2":0,"tot":78,"s2pct":0.0,"pc":"00190","vkFor":"1-4","vkTot":54,"vkPct":"1.9-7.4","vkPct1920":"na"},{"name":"Suutarilan ala-asteen koulu","s2name":"Suutarilan ala-asteen koulu","grades":"1–6","avg":null,"s2":18,"tot":339,"s2pct":5.3,"pc":"00740","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Suutarinkylän peruskoulu","s2name":"Suutarinkylän peruskoulu","grades":"7–9","avg":8.4,"s2":102,"tot":639,"s2pct":16.0,"pc":"00740","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Tahvonlahden ala-aste","s2name":"Tahvonlahden ala-aste","grades":"1–6","avg":null,"s2":87,"tot":291,"s2pct":29.9,"pc":"00870","vkFor":"171","vkTot":417,"vkPct":"41.0","vkPct1920":"33.3"},{"name":"Taikatahdin koulu","s2name":"Taikatahdin koulu","grades":"1–6","avg":null,"s2":4,"tot":54,"s2pct":7.4,"pc":"00270","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Taivallahden peruskoulu","s2name":"Taivallahden peruskoulu","grades":"1–9","avg":8.7,"s2":21,"tot":663,"s2pct":3.2,"pc":"00100","vkFor":"48","vkTot":702,"vkPct":"6.8","vkPct1920":"5.9"},{"name":"Tapanilan ala-aste","s2name":"Tapanilan ala-asteen koulu","grades":"1–6","avg":null,"s2":21,"tot":201,"s2pct":10.4,"pc":"00730","vkFor":"21","vkTot":207,"vkPct":"10.1","vkPct1920":"4.9"},{"name":"Tehtaankadun ala-aste","s2name":"Tehtaankadun ala-asteen koulu","grades":"1–6","avg":null,"s2":18,"tot":336,"s2pct":5.4,"pc":"00140","vkFor":"33","vkTot":315,"vkPct":"10.5","vkPct1920":"5.6"},{"name":"Toivolan koulu","s2name":"Toivolan koulu","grades":"1–9","avg":6.95,"s2":48,"tot":108,"s2pct":44.4,"pc":"00680","vkFor":"63","vkTot":111,"vkPct":"56.8","vkPct1920":"35.7"},{"name":"Torpparinmäen peruskoulu","s2name":"Torpparinmäen peruskoulu","grades":"1–9","avg":8.53,"s2":33,"tot":486,"s2pct":6.8,"pc":"00690","vkFor":"39","vkTot":504,"vkPct":"7.7","vkPct1920":"7.7"},{"name":"Töölön ala-aste","s2name":"Töölön ala-asteen koulu","grades":"1–6","avg":null,"s2":15,"tot":432,"s2pct":3.5,"pc":"00250","vkFor":"45","vkTot":456,"vkPct":"9.9","vkPct1920":"5.0"},{"name":"Töölön yhteiskoulu","s2name":"Töölön yhteiskoulu","grades":"7–9","avg":8.62,"s2":9,"tot":336,"s2pct":2.7,"pc":"00250","vkFor":"24","vkTot":339,"vkPct":"7.1","vkPct1920":"5.9"},{"name":"Vallilan ala-aste","s2name":"Vallilan ala-asteen koulu","grades":"1–6","avg":null,"s2":51,"tot":444,"s2pct":11.5,"pc":"00550","vkFor":"57","vkTot":399,"vkPct":"14.3","vkPct1920":"10.3"},{"name":"Vartiokylän ala-aste","s2name":"Vartiokylän ala-asteen koulu","grades":"1–6","avg":null,"s2":93,"tot":423,"s2pct":22.0,"pc":"00950","vkFor":"114","vkTot":438,"vkPct":"26.0","vkPct1920":"19.3"},{"name":"Vartiokylän yläasteen koulu","s2name":"Vartiokylän yläasteen koulu","grades":"7–9","avg":7.91,"s2":99,"tot":366,"s2pct":27.0,"pc":"00910","vkFor":null,"vkTot":null,"vkPct":null,"vkPct1920":null},{"name":"Vattuniemen ala-aste","s2name":"Vattuniemen ala-aste","grades":"1–5","avg":null,"s2":15,"tot":339,"s2pct":4.4,"pc":"00210","vkFor":"48","vkTot":501,"vkPct":"9.6","vkPct1920":"2.5"},{"name":"Vesalan peruskoulu","s2name":"Vesalan peruskoulu","grades":"7–9","avg":7.36,"s2":498,"tot":879,"s2pct":56.7,"pc":"00940","vkFor":"699","vkTot":993,"vkPct":"70.4","vkPct1920":"51.7"},{"name":"Vuoniityn peruskoulu","s2name":"Vuoniityn peruskoulu","grades":"1–9","avg":8.0,"s2":222,"tot":969,"s2pct":22.9,"pc":"00980","vkFor":"291","vkTot":987,"vkPct":"29.5","vkPct1920":"20.9"},{"name":"Pohjoismainen yhtenäiskoulu","s2name":"Yhtenäiskoulu","grades":"1–9","avg":8.59,"s2":18,"tot":375,"s2pct":4.8,"pc":"00610","vkFor":"30","vkTot":423,"vkPct":"7.1","vkPct1920":"6.7"},{"name":"Zacharias Topeliusskolan","s2name":"Zacharias Topeliusskolan","grades":"1–9","avg":7.81,"s2":0,"tot":117,"s2pct":0.0,"pc":"00250","vkFor":"","vkTot":144,"vkPct":"na","vkPct1920":"1.1-4.4"},{"name":"Åshöjdens grundskola","s2name":"Åshöjdens grundskola","grades":"1–9","avg":8.15,"s2":0,"tot":360,"s2pct":0.0,"pc":"00510","vkFor":"9","vkTot":117,"vkPct":"7.7","vkPct1920":"2.9"},{"name":"Östersundom skola","s2name":"Östersundom skola","grades":"1–6","avg":null,"s2":0,"tot":33,"s2pct":0.0,"pc":"00890","vkFor":"","vkTot":30,"vkPct":"na","vkPct1920":"na"},{"name":"Lemmilän koulu","s2name":null,"grades":"","avg":null,"s2":null,"tot":null,"s2pct":null,"pc":null,"vkFor":"","vkTot":null,"vkPct":"na","vkPct1920":"6.7-26.7"},{"name":"Outamon koulu","s2name":null,"grades":"","avg":null,"s2":null,"tot":null,"s2pct":null,"pc":null,"vkFor":"1-4","vkTot":null,"vkPct":"na","vkPct1920":"50.0"},{"name":"Pakilan peruskoulu","s2name":null,"grades":"","avg":null,"s2":null,"tot":null,"s2pct":null,"pc":null,"vkFor":"39","vkTot":966,"vkPct":"4.0","vkPct1920":"1.0"},{"name":"Rudolf Steinerskolan i Helsingfors","s2name":null,"grades":"","avg":null,"s2":null,"tot":null,"s2pct":null,"pc":null,"vkFor":"1-4","vkTot":105,"vkPct":"1.0-3.8","vkPct1920":"na"},{"name":"Suutarilan peruskoulu","s2name":null,"grades":"","avg":null,"s2":null,"tot":null,"s2pct":null,"pc":null,"vkFor":"174","vkTot":933,"vkPct":"18.6","vkPct1920":"10.0"}];
+const normS=n=>n.toLowerCase().replace(/[^a-zåäö0-9 ]/g," ").replace(/\b(koulu|skola|skolan|asteen|aste)\b/g," ").replace(/\s+/g," ").trim();
+const pctNum=x=>x&&/^[\d.]+$/.test(x)?+x:null;
+function placeSchools(){
+  const osm=pois.schoolAny.map(p=>({p,n:normS(p.name+" "+(p.tags.name||""))}));
+  for(const s of SCHOOLS){
+    s.share=pctNum(s.vkPct)??s.s2pct;
+    const keys=[s.name,s.s2name].filter(Boolean).map(normS);
+    let hit=osm.find(o=>keys.some(k=>o.n.includes(k)));
+    if(!hit){ const k=keys[0].split(" ").slice(0,2).join(" "); hit=osm.find(o=>o.n.startsWith(k)); }
+    if(hit){ s.lat=hit.p.lat; s.lng=hit.p.lng; hit.p.school=s; }
+    else if(s.pc&&byCode[s.pc]){ const c=byCode[s.pc].center; s.lat=c.lat+(Math.random()-.5)*.004; s.lng=c.lng+(Math.random()-.5)*.008; s.approx=true; }
+  }
+}
+function schoolColor(v){ if(v==null) return "#9aa3a9"; return v<10?"#2a7d4f":v<25?"#8db04a":v<40?"#e0a526":v<55?"#d9662b":"#b3261e"; }
+function schoolPopup(s){
+  const r=(a,b)=>`<dt>${a}</dt><dd>${b}</dd>`;
+  return `<h5>${s.name}</h5>${s.s2name&&s.s2name!==s.name?`<div class="note">${s.s2name}</div>`:""}<dl class="kv">
+   ${r("Grades",s.grades||"–")}
+   ${r("Foreign-language pupils, 2025/26",s.vkPct&&s.vkPct!=="na"?s.vkPct+"%"+(s.vkFor?` (${s.vkFor} / ${s.vkTot??"–"})`:""):"–")}
+   ${r("Same, 2019/20",s.vkPct1920&&s.vkPct1920!=="na"?s.vkPct1920+"%":"–")}
+   ${r("Finnish as 2nd language (S2)",s.s2pct!=null?s.s2pct+"% ("+s.s2+" / "+s.tot+")":"–")}
+   ${r("Leavers' grade average",s.avg!=null?fmt(s.avg,2):"–")}
+  </dl><p class="note">Sources: väestökello.fi (Vipunen/KOSKI) and s2koulut.xyz. ${s.approx?"Location approximate (postal area).":""}</p>`;
+}
+
+
+/* ---------- lukiot (kouluhaku.fi matriculation results + yhteishaku.app cutoffs, 2026) ---------- */
+// cut = lowest accepted GPA on the general line (yleislinja), joint application 2026; yo = matriculation exam mean on 0–7 scale (spring 2026, preliminary);
+// lem = share of L/E/M grades (%); gpa = mean GPA of admitted pupils; lines = every line and its cutoff (special lines over 10 include entrance tests or extra points).
+const LUKIOT=[{"name":"Helsingin Suomalaisen Yhteiskoulun lukio","yhName":"Helsingin Suomalainen Yhteiskoulu","pc":"00320","lat":60.2116,"lng":24.88966,"cut":8.17,"khCut":null,"yo":5.59,"lem":83.0,"gpa":9.51,"adult":false,"lines":[["A-venäjän kielen linja (erit.)",8.17],["A-saksan kielen linja (erit.)",8.31],["A-ranskan kielen linja (erit.)",8.38],["lyhyiden vieraiden kielten linja (erit.)",8.67],["IB-linja (erit.)",12.6]]},{"name":"Helsingin normaalilyseo","yhName":"Helsingin normaalilyseo","pc":"00120","lat":60.16271,"lng":24.94349,"cut":9.58,"khCut":9.58,"yo":5.99,"lem":92.0,"gpa":9.88,"adult":false,"lines":[["yleislinja",9.58]]},{"name":"Gymnasiet Lärkan","yhName":"Gymnasiet Lärkan","pc":"00320","lat":60.21669,"lng":24.89098,"cut":8.58,"khCut":8.58,"yo":4.98,"lem":66.0,"gpa":9.11,"adult":false,"lines":[["allmänna linje",8.58]]},{"name":"Helsingin luonnontiedelukio","yhName":"Helsingin luonnontiedelukio","pc":"00550","lat":60.20377,"lng":24.96272,"cut":8.92,"khCut":8.92,"yo":4.88,"lem":63.0,"gpa":9.32,"adult":false,"lines":[["yleislinja",8.92],["matematiikka- ja luonnontiedelinja (erit.)",9.3]]},{"name":"Ressun lukio","yhName":"Ressun lukio","pc":"00120","lat":60.16732,"lng":24.93829,"cut":9.5,"khCut":9.5,"yo":6.16,"lem":95.0,"gpa":9.87,"adult":false,"lines":[["yleislinja",9.5],["IB-programme (special educational mission)",9.0]]},{"name":"Sibelius-lukio","yhName":"Sibelius-lukio","pc":"00170","lat":60.1745,"lng":24.95642,"cut":9.33,"khCut":9.33,"yo":5.15,"lem":68.0,"gpa":9.27,"adult":false,"lines":[["yleislinja",9.33],["musiikkilinja (erit.)",15.54],["tanssilinja (erit.)",16.7]]},{"name":"Töölön yhteiskoulun lukio","yhName":"Töölön yhteiskoulu","pc":"00250","lat":60.18526,"lng":24.92363,"cut":9.08,"khCut":9.08,"yo":5.32,"lem":78.0,"gpa":9.55,"adult":false,"lines":[["yleislinja",9.08]]},{"name":"Alppilan lukio","yhName":"Alppilan lukio","pc":"00510","lat":60.19222,"lng":24.939,"cut":8.75,"khCut":8.75,"yo":4.81,"lem":59.0,"gpa":9.02,"adult":false,"lines":[["yleislinja",8.75]]},{"name":"Kulosaaren yhteiskoulun lukio","yhName":"Kulosaaren yhteiskoulu","pc":"00570","lat":60.18669,"lng":25.0029,"cut":9.08,"khCut":9.08,"yo":5.14,"lem":70.0,"gpa":9.47,"adult":false,"lines":[["yleislinja",9.08],["tiede- ja teknologialinja",10.92],["yhteiskunta- ja talouslinja",11.63],["englanninkielinen linja",12.36]]},{"name":"Mäkelänrinteen lukio","yhName":"Mäkelänrinteen lukio","pc":"00520","lat":60.19908,"lng":24.94883,"cut":9.17,"khCut":9.17,"yo":4.66,"lem":57.0,"gpa":9.24,"adult":false,"lines":[["yleislinja",9.17],["urheilulinja (erit.)",15.65]]},{"name":"Brändö gymnasium","yhName":"Brändö gymnasium","pc":"00570","lat":60.18584,"lng":25.00232,"cut":8.33,"khCut":8.33,"yo":4.97,"lem":64.0,"gpa":8.78,"adult":false,"lines":[["allmänna linje",8.33],["idrottslinje (erit.)",15.83]]},{"name":"Oulunkylän yhteiskoulun lukio","yhName":"Oulunkylän yhteiskoulu","pc":"00640","lat":60.23592,"lng":24.96326,"cut":8.62,"khCut":8.62,"yo":5.0,"lem":68.0,"gpa":8.89,"adult":false,"lines":[["yleislinja",8.62],["musiikkilinja",10.67],["luonnontiedelinja",10.73]]},{"name":"Helsingin yliopiston Viikin normaalikoulu","yhName":"Helsingin yliopiston Viikin normaalikoulu","pc":"00790","lat":60.22774,"lng":25.03002,"cut":8.67,"khCut":8.67,"yo":5.36,"lem":77.0,"gpa":9.1,"adult":false,"lines":[["yleislinja",8.67]]},{"name":"Kallion lukio","yhName":"Kallion lukio","pc":"00530","lat":60.18388,"lng":24.9551,"cut":7.83,"khCut":7.83,"yo":4.84,"lem":61.0,"gpa":8.78,"adult":false,"lines":[["yleislinja",7.83],["ilmaisutaitolinja (erit.)",13.12]]},{"name":"Herttoniemen yhteiskoulun lukio","yhName":"Herttoniemen yhteiskoulu","pc":"00800","lat":60.20596,"lng":25.03658,"cut":8.5,"khCut":8.5,"yo":4.69,"lem":56.0,"gpa":8.96,"adult":false,"lines":[["yleislinja",8.5]]},{"name":"Munkkiniemen yhteiskoulun lukio","yhName":"Munkkiniemen yhteiskoulu","pc":"00330","lat":60.20023,"lng":24.87834,"cut":8.42,"khCut":8.42,"yo":4.78,"lem":57.0,"gpa":8.92,"adult":false,"lines":[["yleislinja",8.42],["luonnontiedelinja",14.92],["koripallolinja",15.21],["yhteiskunta- ja talouslinja",15.55]]},{"name":"Pohjois-Haagan yhteiskoulun lukio","yhName":"Pohjois-Haagan yhteiskoulu","pc":"00400","lat":60.22702,"lng":24.8975,"cut":8.75,"khCut":8.75,"yo":4.45,"lem":47.0,"gpa":8.97,"adult":false,"lines":[["yleislinja",8.75],["urheilulinja (erit.)",14.2]]},{"name":"Etu-Töölön lukio","yhName":"Etu-Töölön lukio","pc":"00100","lat":60.17115,"lng":24.92233,"cut":8.42,"khCut":8.42,"yo":4.45,"lem":49.0,"gpa":8.93,"adult":false,"lines":[["yleislinja",8.42]]},{"name":"Helsingin kuvataidelukio","yhName":"Helsingin kuvataidelukio","pc":"00500","lat":60.18574,"lng":24.95845,"cut":7.67,"khCut":7.67,"yo":4.66,"lem":56.0,"gpa":8.42,"adult":false,"lines":[["yleislinja",7.67],["kuvataidelinja (erit.)",13.58]]},{"name":"Lauttasaaren yhteiskoulun lukio","yhName":"Lauttasaaren yhteiskoulu","pc":"00200","lat":60.15821,"lng":24.86295,"cut":8.42,"khCut":8.42,"yo":4.32,"lem":44.0,"gpa":8.98,"adult":false,"lines":[["yleislinja",8.42],["yrittäjyyden ja kansainvälisen liiketoiminnan linja (erit.)",9.0]]},{"name":"Helsingin ranskalais-suomalaisen koulun lukio","yhName":"Helsingin Ranskalais-Suomalainen koulu","pc":"00350","lat":60.20763,"lng":24.86986,"cut":7.5,"khCut":7.5,"yo":4.6,"lem":56.0,"gpa":8.4,"adult":false,"lines":[["A-ranskan kielen linja",7.5],["A-ranskan kielen linja (erit.)",17.0]]},{"name":"Tölö gymnasium","yhName":"Tölö gymnasium","pc":"00260","lat":60.17921,"lng":24.92184,"cut":7.83,"khCut":7.83,"yo":4.21,"lem":43.0,"gpa":8.47,"adult":false,"lines":[["allmänna linje",7.83],["bildkonstlinje (erit.)",15.96],["humanekologilinje (erit.)",16.62],["musiklinje (erit.)",17.83]]},{"name":"Maunulan yhteiskoulun lukio ja Helsingin matematiikkalukio","yhName":"Maunulan yhteiskoulu - Helsingin matematiikkalukio","pc":"00630","lat":60.22994,"lng":24.92693,"cut":7.92,"khCut":7.92,"yo":4.27,"lem":43.0,"gpa":8.62,"adult":false,"lines":[["yleislinja",7.92],["matematiikka- ja luonnontiedelinja (erit.)",11.67]]},{"name":"Englantilaisen koulun lukio","yhName":"Englantilainen koulu","pc":"00270","lat":60.1937,"lng":24.8958,"cut":8.0,"khCut":8.0,"yo":3.97,"lem":38.0,"gpa":8.19,"adult":false,"lines":[["englannin ja suomen kielen ja kulttuurin linja (erit.)",8.0]]},{"name":"Konepajan lukio","yhName":"Konepajan lukio","pc":"00510","lat":60.1961,"lng":24.9482,"cut":7.67,"khCut":7.67,"yo":null,"lem":null,"gpa":7.88,"adult":false,"lines":[["yleislinja",7.67]]},{"name":"Helsingin kielilukio","yhName":"Helsingin kielilukio","pc":"00920","lat":60.2247,"lng":25.0744,"cut":8.38,"khCut":8.38,"yo":3.53,"lem":25.0,"gpa":8.51,"adult":false,"lines":[["yleislinja",8.38],["englannin- ja suomenkielinen linja",8.14],["kielet ja kansainvälisyys linja",8.23]]},{"name":"Suomalais-venäläisen koulun lukio","yhName":"Suomalais-venäläinen koulu","pc":"00400","lat":60.23831,"lng":24.8993,"cut":8.0,"khCut":null,"yo":4.33,"lem":45.0,"gpa":7.89,"adult":false,"lines":[["A-venäjän kielen linja (erit.)",8.0],["B3-venäjän kielen linja (erit.)",8.08]]},{"name":"Helsingin Uuden yhteiskoulun lukio","yhName":"Helsingin Uusi yhteiskoulu","pc":"00710","lat":60.23877,"lng":24.99926,"cut":7.77,"khCut":7.77,"yo":3.74,"lem":31.0,"gpa":8.06,"adult":false,"lines":[["yleislinja",7.77],["kuvataidelinja",9.19]]},{"name":"Vuosaaren lukio","yhName":"Vuosaaren lukio","pc":"00980","lat":60.20795,"lng":25.141,"cut":7.5,"khCut":7.5,"yo":3.51,"lem":23.0,"gpa":7.98,"adult":false,"lines":[["yleislinja",7.5],["teknologialinja",8.42],["musiikkilinja",11.83]]},{"name":"Rudolf Steinerskolan i Helsingfors","yhName":"Rudolf Steinerskolan i Helsingfors","pc":"00940","lat":null,"lng":null,"cut":7.33,"khCut":7.33,"yo":3.6,"lem":25.0,"gpa":7.4,"adult":false,"lines":[["linje för steinerpedagogik (erit.)",7.33]]},{"name":"Helsingin yhteislyseon lukio","yhName":"Helsingin yhteislyseo","pc":"00950","lat":60.2307,"lng":25.08944,"cut":7.33,"khCut":7.33,"yo":3.69,"lem":29.0,"gpa":7.71,"adult":false,"lines":[["yleislinja",7.33],["skeittilinja",7.0],["taito- ja taidelinja",13.08]]},{"name":"Apollon yhteiskoulun lukio","yhName":"Apollon yhteiskoulu","pc":"00410","lat":60.24943,"lng":24.85316,"cut":7.38,"khCut":7.38,"yo":3.4,"lem":19.0,"gpa":7.94,"adult":false,"lines":[["yleislinja",7.38]]},{"name":"Eiran aikuislukio","yhName":null,"pc":"00940","lat":null,"lng":null,"cut":null,"khCut":null,"yo":3.77,"lem":30.0,"gpa":null,"adult":true,"lines":[]},{"name":"Helsingin medialukio","yhName":"Helsingin medialukio","pc":"00730","lat":60.26961,"lng":25.02983,"cut":7.0,"khCut":7.0,"yo":3.29,"lem":20.0,"gpa":7.42,"adult":false,"lines":[["yleislinja",7.0],["yhteiskunta- ja medialinja",7.0]]},{"name":"Konepajan lukio ja aikuislukio","yhName":null,"pc":"00940","lat":null,"lng":null,"cut":null,"khCut":null,"yo":3.4,"lem":24.0,"gpa":null,"adult":true,"lines":[]},{"name":"Helsingin Rudolf Steiner koulun lukio","yhName":"Helsingin Rudolf Steiner -koulu","pc":"00270","lat":60.19606,"lng":24.90776,"cut":7.42,"khCut":null,"yo":3.4,"lem":22.0,"gpa":7.28,"adult":false,"lines":[["steinerpedagogiikan linja (erit.)",7.42],["esittävän taiteen linja",12.92]]},{"name":"Töölön yhteiskoulun aikuislukio","yhName":null,"pc":"00940","lat":null,"lng":null,"cut":null,"khCut":null,"yo":3.34,"lem":20.0,"gpa":null,"adult":true,"lines":[]},{"name":"Elias koulun lukio","yhName":"Elias-koulun lukio","pc":"00150","lat":60.15736,"lng":24.93658,"cut":7.4,"khCut":null,"yo":null,"lem":null,"gpa":null,"adult":false,"lines":[["steinerpedagogiikan linja (erit.)",7.4]]}].filter(l=>!l.adult&&l.lat);
+function eligibleLukiot(){ const g=parseFloat($("gpa").value); return LUKIOT.filter(l=>isNaN(g)||(l.cut!=null&&l.cut<=g)||l.lines.some(x=>x[1]<=10&&x[1]<=g)); }
+function yoColor(v){ if(v==null) return "#9aa3a9"; return v>=5.5?"#123f6b":v>=5?"#2a6b9a":v>=4.5?"#4b8fb4":v>=4?"#78b0c4":"#a6cdd0"; }
+function lukioPopup(l){
+  return `<h5>${l.name}</h5><dl class="kv">
+   <dt>General-line cutoff 2026</dt><dd>${l.cut!=null?fmt(l.cut,2):"–"}</dd>
+   <dt>Matriculation mean (0–7)</dt><dd>${l.yo!=null?fmt(l.yo,2):"–"}</dd>
+   <dt>L, E or M grades</dt><dd>${l.lem!=null?l.lem+"%":"–"}</dd>
+   <dt>Admitted pupils' mean GPA</dt><dd>${l.gpa!=null?fmt(l.gpa,2):"–"}</dd></dl>
+   ${l.lines.length?`<h4 style="margin:8px 0 4px;font:700 11px var(--f-display);text-transform:uppercase;letter-spacing:.8px;color:var(--muted)">Lines and cutoffs</h4><dl class="kv">${l.lines.map(([a,b])=>`<dt>${a}</dt><dd>${fmt(b,2)}</dd>`).join("")}</dl>`:""}
+   <p class="note">Cutoffs above 10 include entrance tests or extra points. Sources: kouluhaku.fi (YTL, spring 2026), yhteishaku.app (joint application 2026).</p>`;
+}
+function nearLukiot(a){
+  const el=eligibleLukiot(); const g=parseFloat($("gpa").value);
+  const list=el.map(l=>({l,d:km(a.center,l)})).sort((x,y)=>x.d-y.d).slice(0,5);
+  if(!list.length) return `<p class="note">No lukio has a cutoff at or below a GPA of ${fmt(g,2)}.</p>`;
+  return `<dl class="kv">${list.map(({l,d})=>`<dt>${l.name} · ${fmt(d,1)} km</dt><dd>${l.cut!=null?"cut "+fmt(l.cut,2):""}${l.yo!=null?" · YO "+fmt(l.yo,2):""}</dd>`).join("")}</dl>
+   <p class="note">${isNaN(g)?"Cutoff = lowest accepted GPA, general line, 2026. YO = matriculation mean (0–7), spring 2026.":"Only lukiot you can reach with a GPA of "+fmt(g,2)+"."}</p>`;
+}
+
+/* ---------- colour scales ---------- */
+const RAMP=["--c0","--c1","--c2","--c3","--c4","--c5","--c6"].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const METRICS={
+  price:{label:"Price of old flats, €/m²",get:a=>a.price,fmt:v=>eur(v)},
+  rentM2:{label:"Rent, €/m²/month",get:a=>a.rentM2,fmt:v=>"€"+fmt(v,1)},
+  medHH:{label:"Median household income",get:a=>a.medHH,fmt:v=>eur(v)},
+  age:{label:"Average age",get:a=>a.age,fmt:v=>fmt(v,1)},
+  kids:{label:"Households with children",get:a=>a.kids,fmt:pct},
+  over65:{label:"Residents aged 65+",get:a=>a.over65,fmt:pct},
+  own:{label:"Owner-occupied dwellings",get:a=>a.own,fmt:pct},
+  dwSize:{label:"Average dwelling size, m²",get:a=>a.dwSize,fmt:v=>fmt(v,0)},
+  masters:{label:"Master's degree or higher (18+)",get:a=>a.masters,fmt:pct},
+  unemp:{label:"Unemployment rate",get:a=>a.unemp,fmt:pct},
+  density:{label:"Residents per km²",get:a=>a.density,fmt:v=>fmt(v)},
+};
+for(const [k,m] of Object.entries(METRICS)) $("colorBy").add(new Option(m.label,k));
+function quantileBreaks(vals,n=7){const s=vals.filter(v=>v!=null).sort((a,b)=>a-b);if(!s.length)return[];return Array.from({length:n-1},(_,i)=>s[Math.floor((i+1)*s.length/n)]);}
+function classOf(v,br){if(v==null)return -1;let i=0;while(i<br.length&&v>=br[i])i++;return i;}
+
+/* ---------- areas layer ---------- */
+let areaLayer=null, selected=null, legendCtl=null;
+function drawAreas(){
+  if(areaLayer) map.removeLayer(areaLayer);
+  const fc={type:"FeatureCollection",features:areas.map(a=>({type:"Feature",geometry:a.geom,properties:{code:a.code}}))};
+  areaLayer=L.geoJSON(fc,{style:styleArea,onEachFeature:(f,l)=>{const a=byCode[f.properties.code];a.layer=l;
+    l.bindTooltip(()=>`<b>${a.code} ${a.name}</b><br>${METRICS[$("colorBy").value].label}: ${METRICS[$("colorBy").value].fmt(METRICS[$("colorBy").value].get(a))}`,{sticky:true});
+    l.on("click",()=>selectArea(a));}}).addTo(map);
+  areaLayer.bringToBack();
+  if(!location.hash) map.fitBounds(areaLayer.getBounds(),{padding:[10,10]});
+}
+let breaks=[];
+const fillOp=()=>+document.getElementById("fillOp").value;
+function drawNames(){
+  nameLayer.clearLayers();
+  if(!$("showNames").checked) return map.removeLayer(nameLayer);
+  const z=map.getZoom();
+  for(const a of areas){
+    if(z<12&&(a.p.pinta_ala||0)<1.5e6) continue; // only larger areas when zoomed out
+    const label=z>=13?a.name:a.name.split(/ - | – /)[0];
+    nameLayer.addLayer(L.marker([a.center.lat,a.center.lng],{pane:"names",interactive:false,keyboard:false,
+      icon:L.divIcon({className:"aname",html:`<span>${label}</span>${z>=13?`<small>${a.code}</small>`:""}`,iconSize:null})}));
+  }
+  nameLayer.addTo(map);
+}
+function styleArea(f){
+  const a=byCode[f.properties.code]; const m=METRICS[$("colorBy").value]; const v=m.get(a); const c=classOf(v,breaks);
+  const pass=a.pass!==false; const homes=mode==="homes"&&map.getZoom()>=15;
+  return {weight:a===selected?3:.8,color:a===selected?"#15212b":"#ffffff",fillColor:c<0?"#c9cfd3":RAMP[c],
+    fillOpacity:homes?0.05:(pass?fillOp():fillOp()*0.15),opacity:pass?0.9:.35};
+}
+function restyle(){
+  const m=METRICS[$("colorBy").value]; breaks=quantileBreaks(areas.map(m.get));
+  areaLayer&&areaLayer.setStyle(styleArea); drawLegend();
+}
+function drawLegend(){
+  if(legendCtl) map.removeControl(legendCtl);
+  legendCtl=L.control({position:"bottomright"});
+  legendCtl.onAdd=()=>{const d=L.DomUtil.create("div","legend");
+    if(mode==="homes"&&map.getZoom()>=15){const b=B_METRICS[$("bColorBy").value];
+      d.innerHTML=`<b>${b.label}</b><div class="ramp">${RAMP.map(c=>`<i style="background:${c}"></i>`).join("")}</div><div class="ticks"><span>${b.fmt(b.br[0])}</span><span>${b.fmt(b.br[b.br.length-1])}+</span></div>`;}
+    else{const m=METRICS[$("colorBy").value];
+      d.innerHTML=`<b>${m.label}</b><div class="ramp">${RAMP.map(c=>`<i style="background:${c}"></i>`).join("")}</div><div class="ticks"><span>${breaks.length?m.fmt(breaks[0]):"–"}</span><span>${breaks.length?m.fmt(breaks[breaks.length-1]):"–"}</span></div><div class="note" style="margin-top:4px">7 equal-count classes${$("colorBy").value==="price"&&meta.priceYear?", "+meta.priceYear:""}</div>`;}
+    return d;};
+  legendCtl.addTo(map);
+}
+
+/* ---------- filters ---------- */
+function monthlyPayment(L_,ratePct,years){const r=ratePct/1200,n=years*12;return r?L_*r/(1-Math.pow(1+r,-n)):L_/n;}
+function affordablePrice(){
+  const budget=+$("budget").value; if(!budget) return null;
+  const size=+$("size").value||60, vast=(+$("vastike").value||0)*size, left=budget-vast; if(left<=0) return 0;
+  const r=(+$("rate").value)/1200, n=(+$("years").value||25)*12;
+  const loan=r?left*(1-Math.pow(1+r,-n))/r:left*n;
+  return loan+(+$("down").value||0);
+}
+function applyFilters(){
+  const ap=affordablePrice(), size=+$("size").value||60;
+  $("affordOut").innerHTML = ap==null? "Enter a monthly budget to filter areas." :
+    `You can afford about <b>${eur(ap)}</b>, i.e. <b>${eur(ap/size)}/m²</b> for ${size} m².<br><span class="note">Loan ${eur(Math.max(0,ap-(+$("down").value||0)))}. First-time buyers pay no transfer tax; others pay 1.5% on housing-company shares.</span>`;
+  const f={inc:+$("incMin").value,kids:+$("kidsMin").value,own:+$("ownMin").value,rail:+$("railKm").value,tram:+$("tramKm").value,
+    s1:+$("sch1Km").value,s2:+$("sch2Km").value,s3:+$("sch3Km").value,day:+$("dayKm").value};
+  const within=(n,lim)=>!lim||(n&&n.d!=null&&n.d<=lim);
+  for(const a of areas){
+    let ok=true;
+    if(ap!=null) ok = ok && a.price!=null && a.price*size<=ap;
+    if(f.inc) ok=ok&&a.medHH!=null&&a.medHH>=f.inc;
+    if(f.kids) ok=ok&&a.kids!=null&&a.kids>=f.kids;
+    if(f.own) ok=ok&&a.own!=null&&a.own>=f.own;
+    if(a.near){ ok=ok&&within(a.near.rail,f.rail)&&within(a.near.tram,f.tram)&&within(a.near.school1,f.s1)&&within(a.near.school2,f.s2)&&within(a.near.daycare,f.day); }
+    if(f.s3||!isNaN(parseFloat($("gpa").value))){ const n=nearest(a.center,eligibleLukiot()); a.nearLukio=n; if(f.s3) ok=ok&&within(n,f.s3); }
+    a.pass=ok;
+  }
+  // slider labels
+  $("incMinV").textContent=f.inc?eur(f.inc):"any"; $("kidsMinV").textContent=f.kids?f.kids+"%":"any"; $("ownMinV").textContent=f.own?f.own+"%":"any";
+  for(const k of ["railKm","tramKm","sch1Km","sch2Km","sch3Km","dayKm"]) $(k+"V").textContent=+$(k).value?fmt(+$(k).value,2).replace(/\.?0+$/,"")+" km":"any";
+  $("fillOpV").textContent=Math.round(fillOp()*100)+"%"; if(areas.length) drawNames();
+  $("yearMinV").textContent=+$("yearMin").value>1800?$("yearMin").value:"any";
+  restyle(); renderFigures(); styleBuildings(); dimLukiot();
+}
+const defaults={};
+document.querySelectorAll("#filters input,#filters select").forEach(el=>{defaults[el.id]=el.type==="checkbox"?el.checked:el.value;
+  el.addEventListener("input",()=>{ if(el.id.startsWith("show")) toggleLayers(); applyFilters(); });});
+document.querySelectorAll("[data-reset]").forEach(b=>b.addEventListener("click",()=>{
+  b.closest("section").querySelectorAll("input,select").forEach(el=>{if(el.type==="checkbox")el.checked=defaults[el.id];else el.value=defaults[el.id];});
+  toggleLayers(); applyFilters();}));
+$("colorBy").addEventListener("change",applyFilters);
+
+/* ---------- mode ---------- */
+let mode="areas";
+$("modeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;mode=b.dataset.mode;
+  $("modeSeg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  if(mode==="homes"&&map.getZoom()<15) map.setZoom(15);
+  loadBuildings(); applyFilters();});
+$("tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;$("main").dataset.tab=b.dataset.tab;
+  $("tabs").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b)); if(b.dataset.tab==="map") setTimeout(()=>map.invalidateSize(),50);});
+
+/* ---------- POI layers ---------- */
+const poiLayers={};
+function dotLayer(list,color,label,r=5){return L.layerGroup(list.map(p=>L.circleMarker([p.lat,p.lng],{radius:r,color:"#fff",weight:1.5,fillColor:color,fillOpacity:.95}).bindTooltip(`${label}: ${p.name}`)));}
+function dimLukiot(){ if(!poiLayers.lukiot) return; const ok=new Set(eligibleLukiot()); poiLayers.lukiot.eachLayer(m=>{const l=LUKIOT.find(x=>x.lat===m.getLatLng().lat&&x.lng===m.getLatLng().lng); m.setOpacity(l&&ok.has(l)?1:.3);}); }
+function toggleLayers(){
+  const want={rail:$("showRail").checked,schools:$("showSchools").checked,lukiot:$("showLukiot").checked,family:$("showFamily").checked,health:$("showHealth").checked};
+  if(!poiLayers.rail&&window.osmReady){
+    poiLayers.rail=L.layerGroup([dotLayer(pois.rail,"#e2531d","Station",7),dotLayer(pois.tram,"#1f8a5b","Tram stop",3.5)]);
+    poiLayers.schools=L.layerGroup([
+      dotLayer(pois.schoolAny.filter(p=>!p.school),"#9aa3a9","School (no figures)",4),
+      L.layerGroup(SCHOOLS.filter(s=>s.lat).map(s=>L.circleMarker([s.lat,s.lng],{radius:7,color:"#fff",weight:1.5,fillColor:schoolColor(s.share),fillOpacity:.95}).bindTooltip(`${s.name}: ${s.share!=null?fmt(s.share,0)+"% foreign-language":"no figure"}`).bindPopup(()=>schoolPopup(s))))]);
+    poiLayers.family=L.layerGroup([dotLayer(pois.daycare,"#d98c1f","Daycare",4),dotLayer(pois.playground,"#e8b923","Playground",3),dotLayer(pois.park,"#3c9a4a","Park",4)]);
+    poiLayers.lukiot=L.layerGroup(LUKIOT.map(l=>L.marker([l.lat,l.lng],{icon:L.divIcon({className:"lk",html:`<b style="background:${yoColor(l.yo)}">${l.yo!=null?fmt(l.yo,1):"·"}</b>`,iconSize:null})})
+      .bindTooltip(`${l.name}: cutoff ${l.cut!=null?fmt(l.cut,2):"–"}, YO ${l.yo!=null?fmt(l.yo,2):"–"}`).bindPopup(()=>lukioPopup(l),{maxWidth:320})));
+    poiLayers.health=L.layerGroup([dotLayer(pois.health,"#c0392b","Health care",6),dotLayer(pois.care,"#8e44ad","Care home",5)]);
+  }
+  for(const k in want){ if(!poiLayers[k]) continue; if(want[k]) poiLayers[k].addTo(map); else map.removeLayer(poiLayers[k]); }
+  dimLukiot();
+  if($("showNoise").checked) noiseLayer.addTo(map); else map.removeLayer(noiseLayer);
+}
+
+/* ---------- buildings (City of Helsinki register) ---------- */
+const bldLayer=L.geoJSON(null,{style:styleBuilding,onEachFeature:(f,l)=>l.on("click",e=>{L.popup().setLatLng(e.latlng).setContent(buildingPopup(f.properties)).openOn(map);})}).addTo(map);
+const loadedIds=new Set(); let bTimer=null;
+const B_METRICS={
+  value:{label:"Estimated value (indicative)",br:[150e3,250e3,400e3,700e3,1.5e6,4e6],get:p=>p._value,fmt:v=>v>=1e6?"€"+fmt(v/1e6,1)+"M":"€"+fmt(v/1e3)+"k"},
+  year:{label:"Year completed",br:[1920,1950,1965,1980,1995,2010],get:p=>p._year,fmt:v=>String(v)},
+  floors:{label:"Number of floors",br:[2,3,4,5,7,9],get:p=>p.i_kerrlkm,fmt:v=>fmt(v)},
+  flats:{label:"Number of flats",br:[2,5,15,30,60,100],get:p=>p.i_huoneistojen_lkm,fmt:v=>fmt(v)},
+};
+function enrich(p){
+  p._year=p.c_valmpvm?+String(p.c_valmpvm).slice(0,4):null;
+  p._housing=p.d_ashuoala>0?p.d_ashuoala:null;
+  const a=byCode[p.postinumero]; p._price=a&&a.price;
+  p._value=p._housing&&p._price?p._housing*p._price:null;
+}
+function bPass(p){
+  if($("residentialOnly").checked&&!p._housing) return false;
+  if(+$("yearMin").value>1800&&!(p._year>=+$("yearMin").value)) return false;
+  if(+$("flatsMin").value&&!(p.i_huoneistojen_lkm>=+$("flatsMin").value)) return false;
+  if($("liftOnly").checked&&p.c_hissi!=="x") return false;
+  const a=byCode[p.postinumero]; if(a&&a.pass===false) return false;
+  return true;
+}
+function styleBuilding(f){
+  const p=f.properties, m=B_METRICS[$("bColorBy").value], v=m.get(p), c=classOf(v,m.br), ok=bPass(p);
+  return {weight:.5,color:"#33414b",fillColor:c<0?"#b7bec3":RAMP[c],fillOpacity:ok?.9:.08,opacity:ok?.8:.15};
+}
+function styleBuildings(){ bldLayer.setStyle(styleBuilding); if(mode==="homes") drawLegend(); }
+$("bColorBy").addEventListener("change",styleBuildings);
+function loadBuildings(){
+  clearTimeout(bTimer);
+  if(mode!=="homes"||map.getZoom()<15){ if(map.getZoom()<15) bldLayer.clearLayers(), loadedIds.clear(); return; }
+  bTimer=setTimeout(async()=>{
+    const b=map.getBounds(); setStatus("bld","wait");
+    const url=`https://kartta.hel.fi/ws/geoserver/avoindata/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=avoindata:Rakennukset_alue_rekisteritiedot&outputFormat=application/json&srsName=EPSG:4326&maxFeatures=5000&bbox=${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()},EPSG:4326`;
+    try{const r=await fetch(url); const gj=await r.json();
+      const fresh=gj.features.filter(f=>!loadedIds.has(f.properties.id)); fresh.forEach(f=>{loadedIds.add(f.properties.id);enrich(f.properties);});
+      bldLayer.addData(fresh); setStatus("bld","ok"); styleBuildings();
+    }catch(e){console.warn(e); setStatus("bld","err","kartta.hel.fi unreachable"); diag("Buildings (kartta.hel.fi) failed — "+e.message);}
+  },350);
+}
+map.on("zoomend",()=>{ if(areas.length) drawNames(); });
+map.on("moveend zoomend",()=>{loadBuildings(); if(areaLayer) areaLayer.setStyle(styleArea); drawLegend();});
+const USE={"011":"Detached house","012":"Two-dwelling house","013":"Other small house","021":"Row house","022":"Chain house","032":"Block of flats","039":"Other residential block"};
+function buildingPopup(p){
+  const addr=[p.katunimi_suomi,p.osoitenumero].filter(Boolean).join(" ");
+  return `<h5>${addr||"Building"}</h5>
+  <dl class="kv">
+   <dt>Postal area</dt><dd>${p.postinumero||"–"} ${byCode[p.postinumero]?.name||""}</dd>
+   <dt>Type</dt><dd>${USE[(p.c_kayttark||"").slice(0,3)]||p.c_kayttark||p.tyyppi||"–"}</dd>
+   <dt>Completed</dt><dd>${p._year||"–"}</dd>
+   <dt>Floors</dt><dd>${fmt(p.i_kerrlkm)}</dd>
+   <dt>Flats</dt><dd>${fmt(p.i_huoneistojen_lkm)}</dd>
+   <dt>Housing floor area</dt><dd>${p._housing?fmt(p._housing)+" m²":"–"}</dd>
+   <dt>Lift</dt><dd>${p.c_hissi==="x"?"Yes":"No"}</dd>
+   <dt>Area price</dt><dd>${p._price?eur(p._price)+"/m²":"–"}</dd>
+   <dt>Est. value, whole building</dt><dd>${p._value?eur(p._value):"–"}</dd>
+   ${p._value&&p.i_huoneistojen_lkm>1?`<dt>Average per flat</dt><dd>${eur(p._value/p.i_huoneistojen_lkm)}</dd>`:""}
+  </dl><p class="note">Indicative only: area price per m² × housing floor area.</p>`;
+}
+
+/* ---------- figures panel ---------- */
+function selectArea(a){ selected=a; restyle(); renderFigures(); if(innerWidth<=900){} }
+function renderFigures(){
+  const el=$("figBody"); if(!areas.length){el.innerHTML=`<div class="fig"><h3>Loading Helsinki…</h3><p class="note">Fetching postal-code statistics from Statistics Finland.</p></div>`;return;}
+  if(selected) return renderArea(selected);
+  const pass=areas.filter(a=>a.pass!==false), pop=pass.reduce((s,a)=>s+(a.pop||0),0);
+  const prices=pass.map(a=>a.price).filter(v=>v!=null).sort((a,b)=>a-b);
+  const m=METRICS[$("colorBy").value];
+  const sorted=[...pass].sort((a,b)=>(m.get(b)??-1)-(m.get(a)??-1));
+  el.innerHTML=`<div class="fig"><h4>Matching areas</h4>
+    <div class="big"><div><b>${pass.length}</b><span>of ${areas.length} postal areas</span></div><div><b>${fmt(pop)}</b><span>residents</span></div>
+    <div><b>${prices.length?eur(prices[0]):"–"}</b><span>lowest €/m²</span></div><div><b>${prices.length?eur(prices[Math.floor(prices.length/2)]):"–"}</b><span>median €/m²</span></div></div>
+    <p class="note">Prices: old flats in housing companies${meta.priceYear?", "+meta.priceYear:""}. Click an area for its figures.</p></div>
+    <div class="fig"><h4>Ranked by ${m.label.toLowerCase()}</h4><ol class="list">${sorted.map(a=>`<li data-code="${a.code}"><span>${a.code} ${a.name}</span><span>${m.fmt(m.get(a))}</span></li>`).join("")}</ol></div>`;
+  el.querySelectorAll("li[data-code]").forEach(li=>li.addEventListener("click",()=>{const a=byCode[li.dataset.code];selectArea(a);map.fitBounds(a.layer.getBounds(),{maxZoom:14});}));
+}
+function nearSchools(a){
+  const list=SCHOOLS.filter(s=>s.lat).map(s=>({s,d:km(a.center,s)})).filter(x=>x.d<=1.6||x.s.pc===a.code).sort((x,y)=>x.d-y.d).slice(0,6);
+  if(!list.length) return `<p class="note">${pois.schoolAny.length?"No schools with figures within 1.6 km.":"Loading schools…"}</p>`;
+  return `<div class="bars">${list.map(({s,d})=>`<div class="bar" style="grid-template-columns:1fr 70px 44px" title="${s.name}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name} <em>${fmt(d,1)} km${s.avg?` · avg ${fmt(s.avg,2)}`:""}</em></span><i style="width:${Math.min(100,s.share??0)}%;background:${schoolColor(s.share)}"></i><em>${s.share!=null?fmt(s.share,0)+"%":"–"}</em></div>`).join("")}</div>
+  <p class="note">Share of pupils whose mother tongue is not Finnish, Swedish or Sami (2025/26). S2 share and grade average in each school's popup.</p>`;
+}
+function renderArea(a){
+  const el=$("figBody"), size=+$("size").value||60;
+  const maxAge=Math.max(...Object.values(a.ages));
+  const nd=(n,label)=>n&&n.p?`<dt>${label}</dt><dd>${fmt(n.d,1)} km</dd>`:`<dt>${label}</dt><dd>–</dd>`;
+  const nn=(n)=>n&&n.p?n.p.name:"";
+  const own=a.own||0, rent=a.rent||0, other=Math.max(0,100-own-rent);
+  el.innerHTML=`<div class="fig"><button id="back" class="seg" style="justify-self:start;padding:4px 10px;background:var(--panel);cursor:pointer">← All areas</button>
+    <h3>${a.code} ${a.name}</h3><p class="note">${a.p.namn&&a.p.namn!==a.name?a.p.namn+" · ":""}${fmt(a.pop)} residents · ${fmt(a.density)} per km²</p>
+    <div class="big"><div><b>${a.price?eur(a.price):"–"}</b><span>per m², old flats</span></div><div><b>${a.price?eur(a.price*size):"–"}</b><span>${size} m² flat</span></div>
+    <div><b>${a.rentM2?"€"+fmt(a.rentM2,1):"–"}</b><span>rent per m²/month</span></div><div><b>${a.rentM2?eur(a.rentM2*size):"–"}</b><span>${size} m² rent/month</span></div></div>
+    ${a.rentRooms?`<dl class="kv">${Object.entries(a.rentRooms).map(([k,v])=>`<dt>Rent, ${k.toLowerCase()}</dt><dd>€${fmt(v,2)}/m²</dd>`).join("")}</dl><p class="note">Non-subsidised rental flats, ${meta.rentYear||"latest 4 quarters"}, based on ${fmt(a.rentN)} rental agreements.</p>`:""}
+    ${a.pass===false?`<p class="note" style="color:var(--warn)">Outside your current filters.</p>`:""}</div>
+   <div class="fig"><h4>Income</h4><dl class="kv"><dt>Median household income</dt><dd>${eur(a.medHH)}</dd><dt>Mean household income</dt><dd>${eur(a.meanHH)}</dd>
+     <dt>Median income per resident (18+)</dt><dd>${eur(a.medInc)}</dd><dt>Unemployment rate</dt><dd>${pct(a.unemp)}</dd></dl></div>
+   <div class="fig"><h4>Ages · average ${fmt(a.age,1)}</h4><div class="bars">${Object.entries(a.ages).map(([k,v])=>`<div class="bar"><span>${k}</span><i style="width:${maxAge?100*v/maxAge:0}%"></i><em>${a.pop?pct(100*v/a.pop):"–"}</em></div>`).join("")}</div></div>
+   <div class="fig"><h4>Households · ${fmt(a.p.te_taly)}</h4><dl class="kv"><dt>Average size</dt><dd>${fmt(a.hhSize,2)} people</dd><dt>With children</dt><dd>${pct(a.kids)}</dd>
+     <dt>One person</dt><dd>${pct(share(a.p.te_yks,a.p.te_taly))}</dd><dt>Pensioners</dt><dd>${pct(share(a.p.te_elak,a.p.te_taly))}</dd><dt>Floor area per person</dt><dd>${fmt(a.p.te_as_valj,1)} m²</dd></dl>
+     <div class="stack"><i style="width:${own}%;background:var(--c5)"></i><i style="width:${rent}%;background:var(--c2)"></i><i style="width:${other}%;background:var(--line)"></i></div>
+     <div class="legend-s"><span><i style="background:var(--c5)"></i>Owned ${pct(a.own)}</span><span><i style="background:var(--c2)"></i>Rented ${pct(a.rent)}</span></div></div>
+   <div class="fig"><h4>Homes · ${fmt(a.p.ra_asunn)} dwellings</h4><dl class="kv"><dt>In blocks of flats</dt><dd>${pct(share(a.p.ra_kt_as,a.p.ra_asunn))}</dd><dt>In small houses</dt><dd>${pct(share(a.p.ra_pt_as,a.p.ra_asunn))}</dd>
+     <dt>Average dwelling size</dt><dd>${fmt(a.dwSize)} m²</dd><dt>Residential buildings</dt><dd>${fmt(a.p.ra_asrak)}</dd></dl></div>
+   <div class="fig"><h4>Education (18+)</h4><dl class="kv"><dt>Bachelor's or higher</dt><dd>${pct(a.tertiary)}</dd><dt>Master's or higher</dt><dd>${pct(a.masters)}</dd><dt>Basic level only</dt><dd>${pct(share(a.p.ko_perus,a.p.ko_ika18y))}</dd></dl></div>
+   <div class="fig"><h4>Nearest, from the area's centre</h4>${a.near?`<dl class="kv">
+     ${nd(a.near.rail,"Metro / train: "+nn(a.near.rail))}${nd(a.near.tram,"Tram stop")}${nd(a.near.school1,"Primary school: "+nn(a.near.school1))}
+     ${nd(a.near.school2,"Grades 7–9: "+nn(a.near.school2))}${nd(a.near.school3,"Upper secondary: "+nn(a.near.school3))}${nd(a.near.daycare,"Daycare")}${nd(a.near.health,"Health care: "+nn(a.near.health))}
+     <dt>Playgrounds within 750 m</dt><dd>${fmt(a.playgrounds)}</dd></dl>`:`<p class="note">Loading schools and transit from OpenStreetMap…</p>`}</div>
+   <div class="fig"><h4>Nearest lukiot (upper secondary)</h4>${nearLukiot(a)}</div>
+   <div class="fig"><h4>Schools nearby · foreign-language pupils</h4>${nearSchools(a)}</div>
+   <div class="fig"><p class="note">Census figures: Statistics Finland Paavo (${a.year.replace("pno_tilasto_","")} release, residents at end of 2024). Values hidden by Statistics Finland for privacy show as “–”.</p></div>`;
+  $("back").addEventListener("click",()=>{selected=null;restyle();renderFigures();});
+}
+
+/* ---------- boot ---------- */
+(async function(){
+  renderFigures();
+  const ok=await loadPaavo();
+  if(!ok){ $("figBody").innerHTML=`<div class="fig"><h3>Could not load census areas</h3><p class="note">The page could not reach Statistics Finland (geo.stat.fi). Check your internet connection and reload. If you opened this inside a sandboxed viewer, download the file and open it directly in Chrome, Edge, Firefox or Safari.</p></div>`; return; }
+  drawAreas(); drawNames(); applyFilters();
+  await Promise.all([loadPrices(),loadRents()]); applyFilters();
+  await loadOSM(); placeSchools(); areaAccess(); window.osmReady=true; toggleLayers(); applyFilters();
+})();
+</script>
+</body>
+</html>
