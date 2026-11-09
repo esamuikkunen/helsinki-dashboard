@@ -12,6 +12,7 @@
 :root{
   --bg:#f3f5f6; --panel:#ffffff; --ink:#15212b; --muted:#5b6872; --line:#dde3e7;
   --accent:#1f8a5b; --accent-ink:#ffffff; --warn:#b5502a; --sea:#0f4c75;
+  --nx:#8a3ffc; --nx-fill:rgba(138,63,252,.18);
   --c0:#eef4f1; --c1:#cfe3dc; --c2:#a6cdd0; --c3:#78b0c4; --c4:#4b8fb4; --c5:#2a6b9a; --c6:#123f6b;
   --f-display:"Archivo",system-ui,sans-serif; --f-body:"Archivo",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
 }
@@ -80,6 +81,8 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
 .poi{border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 #tabs{display:none}
 .basemap{filter:saturate(.45) brightness(1.04) contrast(.95)}
+.nxm{background:none;border:0}
+.nxm b{display:block;width:16px;height:16px;transform:translate(-50%,-50%) rotate(45deg);background:var(--nx);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);border-radius:3px}
 .lk{background:none;border:0}
 .lk b{display:inline-block;transform:translate(-50%,-50%);min-width:26px;padding:2px 4px;border-radius:3px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);color:#fff;font:600 11px var(--f-mono);text-align:center}
 .aname{background:none;border:0;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;line-height:1.1;pointer-events:none}
@@ -192,8 +195,16 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
     <h2>Health care</h2>
     <label class="row"><input type="checkbox" id="showHealth"> Show hospitals, health stations and care homes</label>
   </section>
+
+  <section class="grp" data-g="nx">
+    <h2>Needle exchange points</h2>
+    <label class="row"><input type="checkbox" id="showNx"> Show needle exchange points (neulanvaihtopisteet)</label>
+    <label class="row"><input type="checkbox" id="showNxWalk"> Show 5-minute walk around every point</label>
+    <div class="legend-s"><span><i style="background:var(--nx)"></i>Point</span><span><i style="background:var(--nx-fill);outline:1.5px dashed var(--nx);outline-offset:-1.5px"></i>5-minute walk</span></div>
+    <p class="hint">Click a point to zoom to it and see its address, opening hours and the area within a 5-minute walk along streets and paths. The mobile Liikkuva Symppis and Katuklinikka outreach team have no fixed address and are not shown.</p>
+  </section>
   <section class="grp">
-    <p class="note">Data: Statistics Finland (Paavo 2026, dwelling prices and rents, CC BY 4.0), City of Helsinki building register and noise survey (CC BY 4.0), © OpenStreetMap contributors (ODbL). School figures: väestökello.fi (Vipunen/KOSKI, 2025/26) and s2koulut.xyz. High school results and cutoffs: kouluhaku.fi (YTL, spring 2026) and yhteishaku.app (joint application 2026). Building values are a rough estimate: area price per m² × housing floor area. They are not a valuation.</p>
+    <p class="note">Data: Statistics Finland (Paavo 2026, dwelling prices and rents, CC BY 4.0), City of Helsinki building register and noise survey (CC BY 4.0), © OpenStreetMap contributors (ODbL). School figures: väestökello.fi (Vipunen/KOSKI, 2025/26) and s2koulut.xyz. Needle exchange points: paihdelinkki.fi, Helsinki service map, OpenStreetMap routing. High school results and cutoffs: kouluhaku.fi (YTL, spring 2026) and yhteishaku.app (joint application 2026). Building values are a rough estimate: area price per m² × housing floor area. They are not a valuation.</p>
   </section>
 </aside>
 
@@ -513,6 +524,34 @@ function nearLukiot(a){
    <p class="note">${isNaN(g)?"Cutoff = lowest accepted GPA, general line, 2026. YO = matriculation mean (0–7), spring 2026.":"Only high schools you can reach with a GPA of "+fmt(g,2)+"."}</p>`;
 }
 
+
+/* ---------- needle exchange points (Päihdelinkki list, Helsinki service map coordinates) ---------- */
+// walk = area reachable on foot in 5 minutes along streets and paths (Valhalla routing on OpenStreetMap, ~5.1 km/h), calculated 9 Nov 2026.
+const NX=[{"id":"itis","name":"Itiksen Symppis","addr":"Turunlinnantie 12, Helsinki","area":"Itäkeskus","lat":60.21093,"lng":25.079777,"hours":"Mon–Fri 10:00–15:30","note":"","walk":[[25.08178,60.21394],[25.07978,60.21405],[25.07878,60.21345],[25.07778,60.2133],[25.07719,60.21334],[25.07678,60.21356],[25.07637,60.21334],[25.07555,60.21215],[25.07388,60.21083],[25.07358,60.20993],[25.07478,60.20851],[25.07578,60.20814],[25.07678,60.20839],[25.07778,60.20829],[25.07978,60.20757],[25.08078,60.20748],[25.08168,60.20803],[25.08265,60.2078],[25.08378,60.20783],[25.08495,60.20893],[25.08527,60.20993],[25.08491,60.21093],[25.08549,60.21122],[25.08579,60.21192],[25.08542,60.21293],[25.08454,60.2137],[25.08178,60.21394]]},{"id":"kontula","name":"Kontulan terveysneuvontapiste (Kontulan Symppis)","addr":"Naapurintie 14, 00940 Helsinki","area":"Kontula","lat":60.235516,"lng":25.086195,"hours":"Mon–Fri 10:00–15:30","note":"Was closed 1 Jun – 30 Sep 2026.","walk":[[25.09119,60.23763],[25.08943,60.23775],[25.08819,60.23809],[25.0862,60.23807],[25.08519,60.23827],[25.0842,60.23821],[25.083,60.23771],[25.08212,60.23659],[25.08141,60.2363],[25.08072,60.23352],[25.08213,60.23245],[25.0842,60.23196],[25.08459,60.23212],[25.08501,60.2327],[25.08487,60.23352],[25.08519,60.23373],[25.08555,60.23352],[25.08572,60.23304],[25.08649,60.23281],[25.0872,60.23238],[25.08819,60.23239],[25.08846,60.23252],[25.0892,60.23306],[25.0902,60.23352],[25.09112,60.23452],[25.09095,60.23552],[25.09157,60.23752],[25.09119,60.23763]]},{"id":"sorkka","name":"Sörkän Symppis","addr":"Pääskylänrinne 5 B, 00500 Helsinki","area":"Sörnäinen","lat":60.188393,"lng":24.965858,"hours":"Mon–Fri 10:00–15:30","note":"","walk":[[24.96586,60.19052],[24.96486,60.19132],[24.96321,60.19104],[24.96082,60.18939],[24.96066,60.18739],[24.96086,60.18719],[24.96186,60.18643],[24.96298,60.18652],[24.96333,60.18639],[24.96404,60.18557],[24.96486,60.18549],[24.96549,60.18576],[24.96621,60.18575],[24.96686,60.18556],[24.96762,60.18563],[24.96836,60.18589],[24.96986,60.1869],[24.97042,60.18783],[24.97103,60.18822],[24.97113,60.18866],[24.9709,60.18944],[24.9691,60.18915],[24.96753,60.18939],[24.96702,60.18956],[24.96664,60.19018],[24.96586,60.19052]]},{"id":"vallila","name":"Vallilan Symppis","addr":"Mäkelänkatu 50 B, 00510 Helsinki","area":"Vallila","lat":60.1965839,"lng":24.951414,"hours":"Mon–Fri 10:00–15:30","note":"","walk":[[24.94941,60.1998],[24.94616,60.19983],[24.94525,60.19958],[24.94501,60.19858],[24.9455,60.19658],[24.94641,60.19598],[24.94741,60.19578],[24.94805,60.19594],[24.94834,60.19665],[24.94881,60.19658],[24.94899,60.19558],[24.94941,60.19537],[24.94992,60.19458],[24.95023,60.1944],[24.95241,60.1939],[24.95441,60.19363],[24.95641,60.19377],[24.957,60.19399],[24.95752,60.19448],[24.95781,60.19558],[24.95741,60.19858],[24.95441,60.19949],[24.95341,60.19936],[24.95241,60.19944],[24.95141,60.19887],[24.95005,60.19922],[24.94941,60.1998]]}];
+const nxPane=(map.createPane("nxwalk"), map.getPane("nxwalk").style.zIndex=430, "nxwalk");
+const nxColor=()=>getComputedStyle(document.documentElement).getPropertyValue("--nx").trim()||"#8a3ffc";
+const nxWalkLayer=L.layerGroup(), nxAllWalks=L.layerGroup();
+function nxWalkPolygon(p,opts={}){ return L.polygon(p.walk.map(([x,y])=>[y,x]),{pane:nxPane,color:nxColor(),weight:2,dashArray:"6 4",fillColor:nxColor(),fillOpacity:.16,interactive:false,...opts}); }
+function nxPopup(p){
+  return `<h5>${p.name}</h5><dl class="kv"><dt>Address</dt><dd style="text-align:right">${p.addr}</dd><dt>Area</dt><dd>${p.area}</dd><dt>Opening hours</dt><dd>${p.hours}</dd></dl>
+   ${p.note?`<p class="note">${p.note}</p>`:""}
+   <p class="note"><b style="color:var(--nx)">Dashed area</b>: reachable on foot in about 5 minutes along streets and paths (roughly 400 m), not a straight-line circle.</p>
+   <p class="note">Sources: paihdelinkki.fi needle exchange list; location from Helsinki service map; walking area from OpenStreetMap routing.</p>`;
+}
+const nxLayer=L.layerGroup(NX.map(p=>{
+  const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:"nxm",html:"<b></b>",iconSize:null}),title:p.name,riseOnHover:true});
+  m.bindTooltip(p.name+" — click for 5-minute walk").bindPopup(()=>nxPopup(p),{maxWidth:300,autoPan:false});
+  m.on("click",()=>{ nxWalkLayer.clearLayers(); const poly=nxWalkPolygon(p); nxWalkLayer.addLayer(poly).addTo(map);
+    map.flyToBounds(poly.getBounds().pad(.35),{maxZoom:16,duration:.6}); setTimeout(()=>m.openPopup(),650); });
+  m.on("popupclose",()=>nxWalkLayer.clearLayers());
+  return m;
+}));
+NX.forEach(p=>nxAllWalks.addLayer(nxWalkPolygon(p,{weight:1.5,fillOpacity:.12})));
+function toggleNx(){
+  if($("showNx").checked) nxLayer.addTo(map); else { map.removeLayer(nxLayer); nxWalkLayer.clearLayers(); }
+  if($("showNxWalk").checked) nxAllWalks.addTo(map); else map.removeLayer(nxAllWalks);
+}
+
 /* ---------- colour scales ---------- */
 const RAMP=["--c0","--c1","--c2","--c3","--c4","--c5","--c6"].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
 const METRICS={
@@ -634,6 +673,7 @@ const poiLayers={};
 function dotLayer(list,color,label,r=5){return L.layerGroup(list.map(p=>L.circleMarker([p.lat,p.lng],{radius:r,color:"#fff",weight:1.5,fillColor:color,fillOpacity:.95}).bindTooltip(`${label}: ${p.name}`)));}
 function dimLukiot(){ if(!poiLayers.lukiot) return; const ok=new Set(eligibleLukiot()); poiLayers.lukiot.eachLayer(m=>{const l=LUKIOT.find(x=>x.lat===m.getLatLng().lat&&x.lng===m.getLatLng().lng); m.setOpacity(l&&ok.has(l)?1:.3);}); }
 function toggleLayers(){
+  toggleNx();
   const want={rail:$("showRail").checked,schools:$("showSchools").checked,lukiot:$("showLukiot").checked,family:$("showFamily").checked,health:$("showHealth").checked};
   if(!poiLayers.rail&&window.osmReady){
     poiLayers.rail=L.layerGroup([dotLayer(pois.rail,"#e2531d","Station",7),dotLayer(pois.tram,"#1f8a5b","Tram stop",3.5)]);
@@ -759,6 +799,7 @@ function renderArea(a){
      ${nd(a.near.rail,"Metro / train: "+nn(a.near.rail))}${nd(a.near.tram,"Tram stop")}${nd(a.near.school1,"Primary school: "+nn(a.near.school1))}
      ${nd(a.near.school2,"Grades 7–9: "+nn(a.near.school2))}${nd(a.near.school3,"Upper secondary: "+nn(a.near.school3))}${nd(a.near.daycare,"Daycare")}${nd(a.near.health,"Health care: "+nn(a.near.health))}
      <dt>Playgrounds within 750 m</dt><dd>${fmt(a.playgrounds)}</dd></dl>`:`<p class="note">Loading schools and transit from OpenStreetMap…</p>`}</div>
+   <div class="fig"><h4>Nearest needle exchange point</h4>${(()=>{const n=nearest(a.center,NX); return n?`<dl class="kv"><dt>${n.p.name}</dt><dd>${fmt(n.d,1)} km</dd></dl><p class="note">Straight-line distance from the area's centre.</p>`:"";})()}</div>
    <div class="fig"><h4>Nearest high schools</h4>${nearLukiot(a)}</div>
    <div class="fig"><h4>Schools nearby · foreign-language pupils</h4>${nearSchools(a)}</div>
    <div class="fig"><p class="note">Census figures: Statistics Finland Paavo (${a.year.replace("pno_tilasto_","")} release, residents at end of 2024). Values hidden by Statistics Finland for privacy show as “–”.</p></div>`;
