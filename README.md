@@ -1,6 +1,6 @@
 # Helsinki Home Dashboard
 
-Map of Helsinki postal-code areas and buildings with dwelling prices, rents, census figures, schools, lukiot, transit and noise.
+Map of Helsinki postal-code areas and buildings with dwelling prices, rents, census figures, schools, high schools, transit and noise.
 
 Open it: https://esamuikkunen.github.io/helsinki-dashboard/
 
