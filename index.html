@@ -101,6 +101,7 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
   <h1>Helsinki <span>Home</span> Dashboard</h1>
   <span class="sub">Postal-code areas, buildings, prices, schools and transit</span>
   <span class="spacer"></span>
+  <span id="dataDate" class="sub"></span>
   <div id="status"></div>
 </header>
 <div id="tabs" class="seg" style="margin:6px 16px">
@@ -253,20 +254,29 @@ const byCode = {};
 const pois = {school1:[],school2:[],school3:[],schoolAny:[],rail:[],tram:[],daycare:[],playground:[],park:[],health:[],care:[]};
 
 /* ---------- Paavo (Statistics Finland) ---------- */
+/* ---------- saved data (data/*.json, refreshed monthly by GitHub Actions) ---------- */
+let SNAP=null;
+async function loadSnapshotMeta(){ try{ const r=await fetch("data/meta.json",{cache:"no-cache"}); if(r.ok) SNAP=await r.json(); }catch(e){} }
+async function snap(name){ if(!SNAP||!SNAP.sources) return null; try{ const r=await fetch("data/"+name); return r.ok? await r.json():null; }catch(e){ return null; } }
+const snapNote=k=>SNAP&&SNAP.sources&&SNAP.sources[k]?"saved "+SNAP.sources[k].updated:"";
+function ingestPaavo(gj,lyr){
+  for(const f of gj.features){
+    const p=f.properties; for(const k in p) if(p[k]===-1) p[k]=null;
+    const a={code:p.postinumeroalue||p.posti_alue,name:p.nimi,p,geom:f.geometry,center:centroid(f.geometry),year:lyr};
+    derive(a); areas.push(a); byCode[a.code]=a;
+  }
+}
 async function loadPaavo(){
   setStatus("paavo","wait");
+  const saved=SNAP&&SNAP.sources&&SNAP.sources.paavo&&await snap("paavo.geojson");
+  if(saved&&saved.features&&saved.features.length){ ingestPaavo(saved,saved.layer||"pno_tilasto"); setStatus("paavo","ok",snapNote("paavo")); return true; }
   const layers=["pno_tilasto_2026","pno_tilasto_2025","pno_tilasto"]; let lastErr="";
   for(const lyr of layers){
     const url=`https://geo.stat.fi/geoserver/postialue/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=postialue:${lyr}&outputFormat=application/json&srsName=EPSG:4326&CQL_FILTER=${encodeURIComponent("kunta='091'")}`;
     try{
       const r=await fetch(url); if(!r.ok){ lastErr=`${lyr}: HTTP ${r.status}`; continue; }
       const gj=await r.json(); if(!gj.features||!gj.features.length) continue;
-      for(const f of gj.features){
-        const p=f.properties; for(const k in p) if(p[k]===-1) p[k]=null;
-        const a={code:p.postinumeroalue||p.posti_alue,name:p.nimi,p,geom:f.geometry,center:centroid(f.geometry),year:lyr};
-        derive(a); areas.push(a); byCode[a.code]=a;
-      }
-      setStatus("paavo","ok",lyr); return true;
+      ingestPaavo(gj,lyr); setStatus("paavo","ok",lyr+", live"); return true;
     }catch(e){ lastErr=`${lyr}: ${e.message}`; }
   }
   setStatus("paavo","err","could not reach geo.stat.fi");
@@ -318,6 +328,10 @@ async function pxPostal(folder, tableTest, contentsTest, prefer){
   return {values:out, label:tbl.text, period:yearLabel};
 }
 async function loadPrices(){
+  const saved=SNAP&&SNAP.sources&&SNAP.sources.prices&&await snap("prices.json");
+  if(saved&&saved.areas){ let n=0; for(const [pc,v] of Object.entries(saved.areas)){ const a=byCode[pc]; if(!a) continue;
+      a.price=v.price; a.priceTypes=v.types; a.priceSales=v.sales; a.priceYear=v.year; n++; }
+    meta.priceYear=saved.year; setStatus("prices","ok",saved.year+", "+n+" areas, "+snapNote("prices")); return true; }
   // Table 13mu has no "all dwellings" total, so prices are a sales-weighted average over flat sizes and terraced houses.
   // Latest year first; areas without enough sales that year fall back to the year before.
   setStatus("prices","wait");
@@ -350,6 +364,10 @@ async function loadPrices(){
   }catch(e){ console.warn(e); setStatus("prices","err",e.message); diag("Dwelling prices (pxdata.stat.fi) failed — "+e.message); }
 }
 async function loadRents(){
+  const saved=SNAP&&SNAP.sources&&SNAP.sources.rents&&await snap("rents.json");
+  if(saved&&saved.areas){ let n=0; for(const [pc,v] of Object.entries(saved.areas)){ const a=byCode[pc]; if(!a) continue;
+      a.rentM2=v.rentM2; a.rentRooms=v.rooms; a.rentN=v.n; n++; }
+    meta.rentYear=saved.period; setStatus("rents","ok",saved.period+", "+n+" areas, "+snapNote("rents")); return true; }
   // Rents by postal code (table 13eb) moved to Statistics Finland's archive database in June 2026; latest data 2025Q4.
   setStatus("rents","wait");
   const base="https://pxdata.stat.fi/PxWeb/api/v1/en/StatFin_Passiivi/asvu/";
@@ -389,6 +407,8 @@ const meta={};
 /* ---------- OpenStreetMap via Overpass ---------- */
 async function loadOSM(){
   setStatus("osm","wait");
+  const saved=SNAP&&SNAP.sources&&SNAP.sources.osm&&await snap("osm.json");
+  if(saved&&saved.elements&&saved.elements.length){ sortPOIs(saved.elements); setStatus("osm","ok",snapNote("osm")); return true; }
   const b=HEL_BBOX.join(",");
   const q=`[out:json][timeout:90];(nwr["amenity"="school"](${b});nwr["amenity"="kindergarten"](${b});nwr["leisure"="playground"](${b});way["leisure"="park"](${b});
   nwr["amenity"~"^(hospital|clinic)$"](${b});nwr["healthcare"="centre"](${b});nwr["amenity"="nursing_home"](${b});nwr["social_facility"="nursing_home"](${b});
@@ -745,6 +765,8 @@ function renderArea(a){
 /* ---------- boot ---------- */
 (async function(){
   renderFigures();
+  await loadSnapshotMeta();
+  if(SNAP&&SNAP.updated) $("dataDate").textContent="Data saved "+new Date(SNAP.updated).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
   const ok=await loadPaavo();
   if(!ok){ $("figBody").innerHTML=`<div class="fig"><h3>Could not load census areas</h3><p class="note">The page could not reach Statistics Finland (geo.stat.fi). Check your internet connection and reload. If you opened this inside a sandboxed viewer, download the file and open it directly in Chrome, Edge, Firefox or Safari.</p></div>`; return; }
   drawAreas(); drawNames(); applyFilters();

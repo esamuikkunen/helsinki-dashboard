@@ -1,0 +1,56 @@
+name: Update dashboard data
+
+# Downloads fresh data into data/ and republishes the site.
+# Runs monthly, whenever the download script changes, and on demand (Actions tab → Run workflow).
+on:
+  schedule:
+    - cron: "17 4 3 * *"   # 04:17 UTC on the 3rd of each month
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/fetch_data.py
+      - .github/workflows/update-data.yml
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download data
+        run: python3 scripts/fetch_data.py
+
+      - name: Commit changed data
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No data changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Update dashboard data ($(date -u +%Y-%m-%d))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Republish the site
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages build request failed; the site updates on the next push."
