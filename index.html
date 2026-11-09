@@ -79,6 +79,7 @@ ol.list li span:last-child{font:500 12px var(--f-mono)}
 .leaflet-popup-content h5{margin:0 0 4px;font:700 14px var(--f-display)}
 .poi{border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 #tabs{display:none}
+.basemap{filter:saturate(.45) brightness(1.04) contrast(.95)}
 .lk{background:none;border:0}
 .lk b{display:inline-block;transform:translate(-50%,-50%);min-width:26px;padding:2px 4px;border-radius:3px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);color:#fff;font:600 11px var(--f-mono);text-align:center}
 .aname{background:none;border:0;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;line-height:1.1;pointer-events:none}
@@ -233,15 +234,10 @@ function setStatus(k, s, msg){ state[k]={s,msg}; $("status").innerHTML = Object.
 /* ---------- map ---------- */
 const hash = (location.hash.match(/^#(\d+)\/([\d.]+)\/([\d.]+)/)||[]).slice(1).map(Number);
 const map = L.map("map",{zoomControl:true,preferCanvas:true}).setView(hash.length===3?[hash[1],hash[2]]:[60.19,24.97], hash.length===3?hash[0]:11);
-// CARTO's light basemap (OpenStreetMap data) works from local files; OSM's own tile server often refuses them.
-let tileErrors=0, switched=false;
-const carto=L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{maxZoom:20,subdomains:"abcd",attribution:"© OpenStreetMap contributors © CARTO"}).addTo(map);
-// Neighbourhood names sit in their own pane above the colours but below markers, and never catch clicks.
-map.createPane("names"); map.getPane("names").style.zIndex=450; map.getPane("names").style.pointerEvents="none";
-const nameLayer=L.layerGroup();
-carto.on("tileerror",()=>{ if(++tileErrors>6&&!switched){ switched=true; map.removeLayer(carto);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"}).addTo(map).bringToBack();
-  diag("Background map tiles from CARTO failed; switched to OpenStreetMap tiles."); }});
+// OpenStreetMap tiles, muted with a CSS filter so the area colours stay readable. (CARTO's free tiles now require an API key.)
+let tileErrors=0;
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,className:"basemap",attribution:"© OpenStreetMap contributors"})
+  .on("tileerror",()=>{ if(++tileErrors===6) diag("The background street map (tile.openstreetmap.org) did not load."); }).addTo(map);
 map.on("moveend",()=>{const c=map.getCenter(); history.replaceState(null,"",`#${map.getZoom()}/${c.lat.toFixed(4)}/${c.lng.toFixed(4)}`);});
 const noiseLayer = L.tileLayer.wms("https://kartta.hel.fi/ws/geoserver/avoindata/wms",{layers:"avoindata:Meluselvitys_2022_Helsinki_yhteismelu_LAeg_7-22_NPM",format:"image/png",transparent:true,opacity:.55,attribution:"Noise: City of Helsinki 2022"});
 
@@ -322,11 +318,35 @@ async function pxPostal(folder, tableTest, contentsTest, prefer){
   return {values:out, label:tbl.text, period:yearLabel};
 }
 async function loadPrices(){
+  // Table 13mu has no "all dwellings" total, so prices are a sales-weighted average over flat sizes and terraced houses.
+  // Latest year first; areas without enough sales that year fall back to the year before.
   setStatus("prices","wait");
   try{
-    const res=await pxPostal("ashi",t=>/postal code/i.test(t)&&/yearly/i.test(t)&&/square/i.test(t), t=>/square|m2|m²/i.test(t)&&!/number/i.test(t), [/total|yhteensä/i]);
-    for(const [pc,v] of Object.entries(res.values)) if(byCode[pc]) byCode[pc].price=v;
-    meta.priceYear=res.period; setStatus("prices","ok",res.period); return true;
+    const list=await (await fetch(PX+"ashi")).json();
+    const tbl=list.filter(t=>t.type==="t"&&/postal code/i.test(t.text)&&/yearly/i.test(t.text)&&/square/i.test(t.text))[0];
+    if(!tbl) throw new Error("price table not found");
+    const url=PX+"ashi/"+tbl.id, m=await (await fetch(url)).json();
+    const vy=m.variables.find(v=>v.time)||m.variables.find(v=>/year/i.test(v.text)), vp=m.variables.find(v=>/postal/i.test(v.text)),
+          vb=m.variables.find(v=>/building/i.test(v.text)), vc=m.variables.find(v=>/contents|information/i.test(v.code+v.text));
+    const years=vy.values.slice(-2), pcs=vp.values.filter((v,i)=>/^00\d{3}/.test(v)||/^00\d{3}/.test(vp.valueTexts[i]));
+    const price=vc.values[vc.valueTexts.findIndex(t=>/price/i.test(t))], sales=vc.values[vc.valueTexts.findIndex(t=>/number|sales/i.test(t))];
+    const q={query:[{code:vy.code,selection:{filter:"item",values:years}},{code:vp.code,selection:{filter:"item",values:pcs}},
+      {code:vb.code,selection:{filter:"item",values:vb.values}},{code:vc.code,selection:{filter:"item",values:[price,sales]}}],response:{format:"json-stat2"}};
+    const r=await fetch(url,{method:"POST",body:JSON.stringify(q)}); if(!r.ok) throw new Error("query HTTP "+r.status);
+    const js=await r.json(), size=js.size, pos=c=>js.id.indexOf(c), idx=(d,c)=>js.dimension[d].category.index[c];
+    const at=(y,p,b,c)=>{const k=[]; k[pos(vy.code)]=idx(vy.code,y); k[pos(vp.code)]=idx(vp.code,p); k[pos(vb.code)]=idx(vb.code,b); k[pos(vc.code)]=idx(vc.code,c);
+      let n=0; for(let d=0;d<size.length;d++) n=n*size[d]+k[d]; return js.value[n];};
+    let n=0;
+    for(const pc of pcs){
+      const a=byCode[pc.slice(0,5)]; if(!a) continue;
+      for(const y of [...years].reverse()){
+        let s=0,w=0; const types={};
+        vb.values.forEach((b,bi)=>{const pr=at(y,pc,b,price), sl=at(y,pc,b,sales); if(pr&&sl){s+=pr*sl; w+=sl; types[vb.valueTexts[bi]]=pr;}});
+        if(w){ a.price=s/w; a.priceTypes=types; a.priceSales=w; a.priceYear=y; n++; break; }
+      }
+    }
+    meta.priceYear=years[years.length-1];
+    setStatus("prices","ok",meta.priceYear+", "+n+" areas"); return true;
   }catch(e){ console.warn(e); setStatus("prices","err",e.message); diag("Dwelling prices (pxdata.stat.fi) failed — "+e.message); }
 }
 async function loadRents(){
@@ -699,6 +719,7 @@ function renderArea(a){
     <h3>${a.code} ${a.name}</h3><p class="note">${a.p.namn&&a.p.namn!==a.name?a.p.namn+" · ":""}${fmt(a.pop)} residents · ${fmt(a.density)} per km²</p>
     <div class="big"><div><b>${a.price?eur(a.price):"–"}</b><span>per m², old flats</span></div><div><b>${a.price?eur(a.price*size):"–"}</b><span>${size} m² flat</span></div>
     <div><b>${a.rentM2?"€"+fmt(a.rentM2,1):"–"}</b><span>rent per m²/month</span></div><div><b>${a.rentM2?eur(a.rentM2*size):"–"}</b><span>${size} m² rent/month</span></div></div>
+    ${a.priceTypes?`<dl class="kv">${Object.entries(a.priceTypes).map(([k,v])=>`<dt>Price, ${k.toLowerCase()}</dt><dd>${eur(v)}/m²</dd>`).join("")}</dl><p class="note">Old dwellings in housing companies, ${a.priceYear}, average of ${fmt(a.priceSales)} sales${a.priceYear!==meta.priceYear?" (too few sales in "+meta.priceYear+")":""}.</p>`:""}
     ${a.rentRooms?`<dl class="kv">${Object.entries(a.rentRooms).map(([k,v])=>`<dt>Rent, ${k.toLowerCase()}</dt><dd>€${fmt(v,2)}/m²</dd>`).join("")}</dl><p class="note">Non-subsidised rental flats, ${meta.rentYear||"latest 4 quarters"}, based on ${fmt(a.rentN)} rental agreements.</p>`:""}
     ${a.pass===false?`<p class="note" style="color:var(--warn)">Outside your current filters.</p>`:""}</div>
    <div class="fig"><h4>Income</h4><dl class="kv"><dt>Median household income</dt><dd>${eur(a.medHH)}</dd><dt>Mean household income</dt><dd>${eur(a.meanHH)}</dd>
