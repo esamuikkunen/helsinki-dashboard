@@ -283,7 +283,7 @@ const pois = {school1:[],school2:[],school3:[],schoolAny:[],rail:[],tram:[],dayc
 /* ---------- saved data (data/*.json, refreshed monthly by GitHub Actions) ---------- */
 let SNAP=null;
 async function loadSnapshotMeta(){ try{ const r=await fetch("data/meta.json",{cache:"no-cache"}); if(r.ok) SNAP=await r.json(); }catch(e){} }
-async function snap(name){ if(!SNAP||!SNAP.sources) return null; try{ const r=await fetch("data/"+name); return r.ok? await r.json():null; }catch(e){ return null; } }
+async function snap(name){ if(!SNAP||!SNAP.sources) return null; try{ const r=await fetch("data/"+name,{cache:"no-cache"}); return r.ok? await r.json():null; }catch(e){ return null; } }
 const snapNote=k=>SNAP&&SNAP.sources&&SNAP.sources[k]?"saved "+SNAP.sources[k].updated:"";
 function ingestPaavo(gj,lyr){
   for(const f of gj.features){
